@@ -21,6 +21,15 @@ export interface ThemeSummary {
   description: string;
   style: ThemeStyle;
   room_names: string[];
+  rooms?: RoomBrief[];
+}
+
+/** 로비 미리보기용 방 요약 */
+export interface RoomBrief {
+  name: string;
+  has_puzzle: boolean;
+  clue_count: number;
+  minigame: MinigameType | null;
 }
 
 export interface GameConfig {
