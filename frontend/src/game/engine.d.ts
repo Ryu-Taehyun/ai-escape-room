@@ -48,6 +48,10 @@ export interface EngineOptions {
   style: ThemeStyle;
   startPosition?: Vec3;
   audio?: GameAudio | null;
+  /** 화면 흔들림 강도 0~1 (기본 1, 멀미 방지 시 낮춤) */
+  motion?: number;
+  /** 스태미나 변화 (0~1, 탈진 여부) */
+  onStamina?: (stamina: number, exhausted: boolean) => void;
   onInteract?: (target: InteractTarget) => void;
   onRoomChange?: (slot: number) => void;
   onMove?: (e: MoveEvent) => void;
@@ -68,6 +72,8 @@ export declare class EscapeEngine {
   unlockPointer(): void;
   /** 포인터 락 재요청 (사용자 입력 직후에만 성공) */
   lock(): Promise<boolean>;
+  /** 화면 흔들림 강도 0~1 */
+  setMotion(v: number): void;
   updateRemotePlayers(players: RemotePlayerInput[]): void;
   dispose(): void;
 }

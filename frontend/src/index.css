@@ -681,3 +681,10 @@ button.big { font-size: 1.2em; padding: 10px 32px; }
 .tcard-pillar.active { border-color: #ffd77a; box-shadow: 0 0 0 1px #ffd77a, 0 10px 40px rgba(255, 190, 70, 0.35); }
 .tcard-pillar .tcard-check { background: #4a2a08; color: #ffd77a; }
 .tcard-pillar .tcard-icon { filter: drop-shadow(0 0 8px rgba(255, 200, 90, 0.6)); }
+
+/* 스태미나 (달리기) */
+.stamina { margin-top: 7px; height: 4px; width: 100%; background: rgba(255, 255, 255, 0.12); border-radius: 2px; overflow: hidden; }
+.stamina i { display: block; height: 100%; background: #d8dde0; transition: width 0.15s linear; }
+.stamina.ex i { background: #ff3b2b; animation: badge-blink 0.6s steps(1) infinite; }
+.theme-egypt .stamina i { background: #ffd77a; }
+.hud button.off { opacity: 0.45; text-decoration: line-through; }

@@ -13,7 +13,7 @@
 // 상호작용 대상 (target.kind): puzzle | clue | minigame | door
 //   엔진은 상호작용 시 포인터 락을 풀지 않는다. 창을 열지 여부는 React(Game.tsx)가 결정.
 //
-// 조작: 클릭(시점 고정) / WASD / Shift 달리기 / E·클릭 조사 / F 손전등(횃불)
+// 조작: 클릭(시점 고정) / WASD / Shift 달리기(스태미나) / C 웅크리기 / E·클릭 조사 / F 손전등(횃불)
 // =====================================================================
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
@@ -30,6 +30,8 @@ const DOOR_H = 2.6;
 const PLAYER_R = 0.35;
 const EYE_H = 1.6;
 const SPEED = 3.2;
+const BASE_FOV = 72;
+const UP = new THREE.Vector3(0, 1, 0);
 const INTERACT_DIST = 3;
 const MOVE_SEND_MS = 80;
 
@@ -113,9 +115,29 @@ export class EscapeEngine {
     this.disposed = false;
     this.exitDoor = null;
     this.handOn = true;
+    // ---- 1인칭 몸 상태 (흔들림·관성·스태미나) ----
+    this.motion = options.motion ?? 1; // 화면 흔들림 강도 0~1 (멀미 방지 옵션)
+    this.vel = new THREE.Vector3();
+    this.stamina = 1;
+    this.exhausted = false;
+    this.staminaCooldown = 0;
+    this._lastStamina = 1;
+    this._breathAt = 0;
+    this.crouch = 0;
     this.bob = 0;
+    this.bobAmp = 0;
     this.lastStepSign = 1;
-    this.shake = 0;
+    this.stepDip = 0;
+    this.lean = 0;
+    this.turnRoll = 0;
+    this._prevYaw = null;
+    this.trauma = 0;
+    this.rumbleUntil = 0;
+    this.fovPunch = 0;
+    this.fov = BASE_FOV;
+    this._euler = new THREE.Euler(0, 0, 0, 'YXZ');
+    this._q = new THREE.Quaternion();
+    this._v = new THREE.Vector3();
     this.blackoutUntil = 0;
     this.stalkerHideAt = 0;
     this.torchDipUntil = 0;
@@ -131,11 +153,13 @@ export class EscapeEngine {
     this.scene.background = new THREE.Color(fogColor);
     this.scene.fog = new THREE.FogExp2(fogColor, this.cfg.density);
 
-    this.camera = new THREE.PerspectiveCamera(72, w / h, 0.05, 120);
+    // head: 위치 + 시선(마우스). camera 는 head 의 자식으로 흔들림·기울기만 담당한다.
+    this.camera = new THREE.PerspectiveCamera(BASE_FOV, w / h, 0.05, 120);
     const start = options.startPosition || [0, EYE_H, 2.5];
-    this.camera.position.set(start[0], EYE_H, start[2]);
-    this.camera.lookAt(start[0], EYE_H, -HALF);
-    this.scene.add(this.camera);
+    this.head = new THREE.Object3D();
+    this.head.position.set(start[0], EYE_H, start[2]);
+    this.head.add(this.camera);
+    this.scene.add(this.head);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -146,7 +170,7 @@ export class EscapeEngine {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
 
-    this.controls = new PointerLockControls(this.camera, this.renderer.domElement);
+    this.controls = new PointerLockControls(this.head, this.renderer.domElement);
     this.controls.addEventListener('lock', () => this.cb.onLockChange?.(true));
     this.controls.addEventListener('unlock', () => {
       this.keys.clear();
@@ -1046,10 +1070,14 @@ export class EscapeEngine {
 
   // ============================================================ 플레이어 / 효과
   _buildHandLight() {
+    // 손: 시선을 한 박자 늦게 따라와 빛이 자연스럽게 흔들린다
+    this.hand = new THREE.Object3D();
+    this.hand.position.copy(this.head.position);
+    this.scene.add(this.hand);
     if (this.kind === 'egypt') {
       const l = new THREE.PointLight(0xffa458, 6, 11, 1.7);
       l.position.set(0.35, -0.2, -0.4);
-      this.camera.add(l);
+      this.hand.add(l);
       this.handLight = l;
       this.handBase = 6;
       // 손에 든 횃불 불꽃
@@ -1057,7 +1085,7 @@ export class EscapeEngine {
       f.scale.set(0.07, 0.14, 1);
       f.position.set(0.36, -0.3, -0.75);
       f.renderOrder = 999;
-      this.camera.add(f);
+      this.hand.add(f);
       this.handFlame = f;
     } else {
       const l = new THREE.SpotLight(0xe6efff, this.kind === 'horror' ? 55 : 25, 22, 0.42, 0.55, 1.5);
@@ -1068,8 +1096,8 @@ export class EscapeEngine {
       l.shadow.bias = -0.0006;
       l.shadow.camera.near = 0.2;
       l.shadow.camera.far = 22;
-      this.camera.add(l);
-      this.camera.add(l.target);
+      this.hand.add(l);
+      this.hand.add(l.target);
       this.handLight = l;
       this.handBase = l.intensity;
     }
@@ -1171,7 +1199,7 @@ export class EscapeEngine {
       const open = door.isExit ? room?.status === 'cleared' : !!next && next.status !== 'locked';
       if (open && !door.open && !instant) {
         this.audio?.sfx('door');
-        this.shake = Math.max(this.shake, this.kind === 'egypt' ? 0.6 : 0.3);
+        this.addTrauma(this.kind === 'egypt' ? 0.55 : 0.3);
       }
       door.open = open;
       if (instant) door.mesh.position.y = open ? -DOOR_H / 2 - 0.05 : DOOR_H / 2;
@@ -1304,6 +1332,7 @@ export class EscapeEngine {
 
   /** 화면 중앙(조준점)에 있는 상호작용 대상. 벽에 가려지면 null */
   _pickTarget() {
+    this.head.updateMatrixWorld(true); // 렌더 전에도 최신 시선 기준으로 판정
     this.raycaster.setFromCamera(this.center, this.camera);
     this.raycaster.far = INTERACT_DIST;
     const hits = this.raycaster.intersectObjects([...this.interactables, ...this.occluders], true);
@@ -1334,7 +1363,11 @@ export class EscapeEngine {
     const playing = this.controls.isLocked && this.inputEnabled;
 
     if (playing) this._move(dt);
-    else this.camera.position.y += (EYE_H - this.camera.position.y) * Math.min(1, dt * 6);
+    else {
+      this.vel.multiplyScalar(Math.exp(-dt * 10));
+      this.bobAmp *= Math.exp(-dt * 6);
+      this.lean *= Math.exp(-dt * 6);
+    }
 
     // 이벤트 (공포: 정전, 이집트: 지진)
     if (t > this.nextEventAt) {
@@ -1404,7 +1437,7 @@ export class EscapeEngine {
     if (this.sparkObj && t > this.sparkObj.next) {
       this.sparkObj.next = t + 2 + this.R() * 5;
       const p = this.sparkObj.group.position;
-      if (Math.hypot(p.x - this.camera.position.x, p.z - this.camera.position.z) < 6) this.audio?.sfx('spark');
+      if (Math.hypot(p.x - this.head.position.x, p.z - this.head.position.z) < 6) this.audio?.sfx('spark');
     }
 
     // 원격 플레이어
@@ -1426,12 +1459,7 @@ export class EscapeEngine {
       this.cb.onFocusChange?.(null);
     }
 
-    // 카메라 흔들림
-    if (this.shake > 0) {
-      this.camera.position.y += (Math.random() - 0.5) * this.shake * 0.12;
-      this.shake = Math.max(0, this.shake - dt * 0.8);
-    }
-
+    this._updateBody(dt, t, playing);
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -1483,13 +1511,12 @@ export class EscapeEngine {
   }
 
   _triggerEvent(t) {
-    const cam = this.camera.position;
+    const cam = this.head.position;
     if (this.kind === 'horror') {
       this.blackoutUntil = t + 1.2 + this.R() * 0.6;
       this.stalkerHideAt = this.blackoutUntil + 0.15;
       // 플레이어 정면 5m 지점 (현재 방 안으로 제한)
-      const fwd = new THREE.Vector3();
-      this.camera.getWorldDirection(fwd);
+      const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(this.head.quaternion);
       fwd.y = 0;
       fwd.normalize();
       const slot = clamp(Math.floor((cam.x + HALF) / ROOM_SIZE), 0, this.rooms.length - 1);
@@ -1499,10 +1526,13 @@ export class EscapeEngine {
       this.stalker.position.set(sx, 0, sz);
       this.stalker.lookAt(cam.x, 0, cam.z);
       this.stalker.visible = true;
+      this.addTrauma(0.85);
+      this.fovPunch = 9; // 순간적으로 시야가 좁아진다
       this.audio?.sfx('scare');
       this.cb.onScare?.('blackout');
     } else if (this.kind === 'egypt') {
-      this.shake = 1.0;
+      this.addTrauma(0.9);
+      this.rumbleUntil = t + 1.8;
       this.torchDipUntil = t + 1.6;
       this._spawnSand(cam.x + (this.R() - 0.5) * 2, cam.z + (this.R() - 0.5) * 2, t);
       this.audio?.sfx('rumble');
@@ -1550,29 +1580,54 @@ export class EscapeEngine {
   }
 
   _move(dt) {
-    const forward = new THREE.Vector3();
-    this.camera.getWorldDirection(forward);
-    forward.y = 0;
-    forward.normalize();
-    const right = new THREE.Vector3().crossVectors(forward, this.camera.up).normalize();
+    const fwd = this._v.set(0, 0, -1).applyQuaternion(this.head.quaternion);
+    fwd.y = 0;
+    fwd.normalize();
+    const right = new THREE.Vector3().crossVectors(fwd, UP).normalize();
+    const k = this.keys;
+    const f = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
+    const r = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
+    const wish = new THREE.Vector3().addScaledVector(fwd, f).addScaledVector(right, r);
+    const moving = wish.lengthSq() > 0;
+    const crouching = k.has('KeyC');
+    const wantRun = (k.has('ShiftLeft') || k.has('ShiftRight')) && moving && f > 0 && !crouching;
 
-    const dir = new THREE.Vector3();
-    if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) dir.add(forward);
-    if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) dir.sub(forward);
-    if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) dir.add(right);
-    if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) dir.sub(right);
-    const pos = this.camera.position;
-    if (dir.lengthSq() === 0) {
-      pos.y += (EYE_H - pos.y) * Math.min(1, dt * 8);
-      this._emitMove(false);
-      return;
+    // 스태미나: 달리면 줄고, 바닥나면 한동안 못 달리며 숨이 가빠진다
+    const wasExhausted = this.exhausted;
+    if (wantRun && !this.exhausted) {
+      this.stamina = Math.max(0, this.stamina - dt * 0.17);
+      this.staminaCooldown = 0.9;
+      if (this.stamina === 0) this.exhausted = true;
+    } else {
+      this.staminaCooldown -= dt;
+      if (this.staminaCooldown <= 0) this.stamina = Math.min(1, this.stamina + dt * (moving ? 0.09 : 0.16));
+      if (this.exhausted && this.stamina > 0.4) this.exhausted = false;
     }
-    const running = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
-    dir.normalize().multiplyScalar(SPEED * (running ? 1.7 : 1) * dt);
+    const running = wantRun && !this.exhausted;
+    if ((this.exhausted || this.stamina < 0.25) && performance.now() > this._breathAt) {
+      this._breathAt = performance.now() + (this.exhausted ? 850 : 1300);
+      this.audio?.sfx('breath');
+    }
+    if (Math.abs(this.stamina - this._lastStamina) > 0.03 || wasExhausted !== this.exhausted || (this.stamina === 1 && this._lastStamina !== 1)) {
+      this._lastStamina = this.stamina;
+      this.cb.onStamina?.(this.stamina, this.exhausted);
+    }
 
+    // 관성: 서서히 출발하고 서서히 멈춘다
+    const speed = SPEED * (running ? 1.75 : 1) * (crouching ? 0.5 : 1) * (this.exhausted ? 0.72 : 1);
+    if (moving) wish.normalize().multiplyScalar(speed);
+    const accel = 1 - Math.exp(-dt * (moving ? 9 : 7));
+    this.vel.x += (wish.x - this.vel.x) * accel;
+    this.vel.z += (wish.z - this.vel.z) * accel;
+    if (!moving && this.vel.lengthSq() < 0.0004) this.vel.set(0, 0, 0);
+
+    // 옆걸음 기울기
+    this.lean += (-r * 0.022 - this.lean) * Math.min(1, dt * 6);
+
+    const pos = this.head.position;
     const n = this.rooms.length;
-    let nx = clamp(pos.x + dir.x, -HALF + PLAYER_R, n * ROOM_SIZE - HALF - PLAYER_R);
-    let nz = clamp(pos.z + dir.z, -HALF + PLAYER_R, HALF - PLAYER_R);
+    let nx = clamp(pos.x + this.vel.x * dt, -HALF + PLAYER_R, n * ROOM_SIZE - HALF - PLAYER_R);
+    let nz = clamp(pos.z + this.vel.z * dt, -HALF + PLAYER_R, HALF - PLAYER_R);
 
     // 칸막이 충돌: 문이 열려 있고 문틀 안쪽일 때만 통과
     const band = PLAYER_R + WALL_T / 2;
@@ -1594,23 +1649,105 @@ export class EscapeEngine {
       if (this._blocked(nx, pos.z)) nx = pos.x;
       if (this._blocked(nx, nz)) nz = pos.z;
     }
+    // 막힌 방향의 속도는 버린다 (벽에 붙어 미끄러지기)
+    if (Math.abs(nx - pos.x) < 1e-6 && Math.abs(this.vel.x) > 0.05) this.vel.x = 0;
+    if (Math.abs(nz - pos.z) < 1e-6 && Math.abs(this.vel.z) > 0.05) this.vel.z = 0;
 
-    // 걸음 흔들림 + 발소리
-    this.bob += dt * (running ? 11 : 7.5);
-    const s = Math.sin(this.bob);
-    const sign = s >= 0 ? 1 : -1;
+    // 걸음: 실제 속도에 비례해 흔들림과 발소리 주기가 정해진다
+    const sp = Math.hypot(this.vel.x, this.vel.z);
+    const ratio = sp / SPEED;
+    this.bobAmp += (Math.min(1.5, ratio) - this.bobAmp) * Math.min(1, dt * 8);
+    this.bob += dt * 6.4 * ratio;
+    const sign = Math.sin(this.bob) >= 0 ? 1 : -1;
     if (sign !== this.lastStepSign) {
       this.lastStepSign = sign;
-      this.audio?.sfx('step');
+      if (sp > 0.4) {
+        this.audio?.sfx('step', { pan: sign * 0.2, soft: crouching, heavy: running });
+        this.stepDip = running ? 0.032 : crouching ? 0.008 : 0.017;
+      }
     }
     pos.x = nx;
     pos.z = nz;
-    pos.y = EYE_H + Math.abs(s) * 0.045 - 0.02;
     this._emitMove(false);
   }
 
+  /** 카메라 흔들림·기울기·숨쉬기·시야각·손 지연 (매 프레임) */
+  _updateBody(dt, t, playing) {
+    const m = this.motion;
+    const cam = this.camera;
+
+    // 웅크리기
+    const crouchTarget = playing && this.keys.has('KeyC') ? 1 : 0;
+    this.crouch += (crouchTarget - this.crouch) * Math.min(1, dt * 8);
+    this.head.position.y = EYE_H - 0.62 * this.crouch;
+
+    // 숨쉬기 (지칠수록 크고 빠르게)
+    const tired = this.exhausted ? 1 : Math.max(0, 0.35 - this.stamina) / 0.35;
+    const br = 1 + tired * 2.6;
+    const breathY = Math.sin(t * (1.3 + tired * 1.7)) * 0.006 * br;
+    const breathPitch = Math.sin(t * (0.65 + tired * 0.9) + 1) * 0.0025 * br;
+
+    // 걸음 흔들림: 위아래(두 걸음에 두 번) + 좌우(두 걸음에 한 번) + 살짝 기울기
+    const amp = this.bobAmp;
+    const bobY = (Math.abs(Math.sin(this.bob)) * 0.055 - 0.03) * amp;
+    const bobX = Math.cos(this.bob) * 0.026 * amp;
+    const bobRoll = Math.cos(this.bob) * 0.011 * amp;
+    const bobPitch = Math.abs(Math.sin(this.bob)) * 0.006 * amp;
+    this.stepDip *= Math.exp(-dt * 14);
+
+    // 빠르게 돌면 몸이 반대로 살짝 기운다
+    this._euler.setFromQuaternion(this.head.quaternion, 'YXZ');
+    const yaw = this._euler.y;
+    if (this._prevYaw !== null && dt > 0) {
+      let d = yaw - this._prevYaw;
+      if (d > Math.PI) d -= Math.PI * 2;
+      if (d < -Math.PI) d += Math.PI * 2;
+      const target = clamp((-d / dt) * 0.01, -0.045, 0.045);
+      this.turnRoll += (target - this.turnRoll) * Math.min(1, dt * 5);
+    }
+    this._prevYaw = yaw;
+
+    // 충격 흔들림 (trauma² 비례, 부드러운 노이즈)
+    this.trauma = Math.max(this.rumbleUntil > t ? 0.5 : 0, this.trauma - dt * 0.9);
+    const sh = this.trauma * this.trauma * Math.max(m, 0.25);
+    const nz = (fr, o) => Math.sin(t * fr + o) * 0.6 + Math.sin(t * fr * 2.3 + o * 1.7) * 0.4;
+
+    cam.position.set(bobX * m + sh * 0.05 * nz(29, 2), (bobY - this.stepDip) * m + breathY + sh * 0.05 * nz(31, 5), 0);
+    cam.rotation.set(
+      breathPitch + bobPitch * m + sh * 0.035 * nz(23, 1),
+      sh * 0.035 * nz(19, 4),
+      (bobRoll + this.lean + this.turnRoll) * m + sh * 0.05 * nz(17, 7),
+    );
+
+    // 시야각: 달릴 때 넓어지고, 놀라면 순간 좁아진다
+    const sp = Math.hypot(this.vel.x, this.vel.z);
+    const runKick = sp > SPEED * 1.25 ? 7 : 0;
+    this.fovPunch *= Math.exp(-dt * 2.5);
+    const targetFov = BASE_FOV + runKick * m - this.fovPunch - this.crouch * 2;
+    this.fov += (targetFov - this.fov) * Math.min(1, dt * 5);
+    if (Math.abs(cam.fov - this.fov) > 0.01) {
+      cam.fov = this.fov;
+      cam.updateProjectionMatrix();
+    }
+
+    // 손(손전등·횃불)이 시선을 한 박자 늦게 따라온다
+    cam.updateMatrixWorld();
+    cam.getWorldPosition(this.hand.position);
+    cam.getWorldQuaternion(this._q);
+    this.hand.quaternion.slerp(this._q, 1 - Math.exp(-dt * (m > 0.5 ? 8 : 20)));
+  }
+
+  addTrauma(v) {
+    this.trauma = Math.min(1, this.trauma + v);
+  }
+
+  /** 화면 흔들림 강도 (0 = 최소, 1 = 기본) */
+  setMotion(v) {
+    this.motion = clamp(v, 0, 1);
+  }
+
   _emitMove(force) {
-    const pos = this.camera.position;
+    const pos = this.head.position;
     const slot = clamp(Math.floor((pos.x + HALF) / ROOM_SIZE), 0, this.rooms.length - 1);
     if (slot !== this.currentSlot) {
       this.currentSlot = slot;
@@ -1618,7 +1755,7 @@ export class EscapeEngine {
     }
     const now = performance.now();
     if (!force && now - this.lastMoveSent < MOVE_SEND_MS) return;
-    const euler = new THREE.Euler().setFromQuaternion(this.camera.quaternion, 'YXZ');
+    const euler = new THREE.Euler().setFromQuaternion(this.head.quaternion, 'YXZ');
     const key = `${pos.x.toFixed(2)},${pos.z.toFixed(2)},${euler.y.toFixed(2)}`;
     if (!force && key === this._lastMoveKey) return;
     this._lastMoveKey = key;

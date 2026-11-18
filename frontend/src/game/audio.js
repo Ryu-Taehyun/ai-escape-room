@@ -344,18 +344,33 @@ export class GameAudio {
   }
 
   // ---------------------------------------------------------------- 효과음
-  sfx(name) {
+  /**
+   * @param {string} name
+   * @param {{ pan?: number, soft?: boolean, heavy?: boolean }} [opts]
+   */
+  sfx(name, opts = {}) {
     if (!this.ctx || this.ctx.state !== 'running') return;
     const egypt = this.kind === 'egypt';
     switch (name) {
-      case 'step':
+      case 'step': {
+        // 좌우 발 번갈아(pan), 웅크리면 작게, 달리면 크고 둔탁하게. 매번 음색을 조금씩 바꾼다
+        const pan = opts.pan ?? 0;
+        const g = (opts.soft ? 0.35 : opts.heavy ? 1.5 : 1) * (0.85 + Math.random() * 0.3);
+        const v = 0.9 + Math.random() * 0.25;
         if (egypt) {
-          this._burst({ type: 'bandpass', freq: 1300, q: 0.8, gain: 0.05, decay: 0.14 });
-          this._burst({ type: 'lowpass', freq: 220, gain: 0.06, decay: 0.07 });
+          this._burst({ type: 'bandpass', freq: 1300 * v, q: 0.8, gain: 0.05 * g, decay: 0.14, pan });
+          this._burst({ type: 'lowpass', freq: 220 * v, gain: 0.06 * g, decay: 0.07, pan });
         } else {
-          this._burst({ type: 'lowpass', freq: 650, gain: 0.11, decay: 0.08 });
-          this._tone({ f0: 95, f1: 60, gain: 0.05, decay: 0.05 });
+          this._burst({ type: 'lowpass', freq: 650 * v, gain: 0.11 * g, decay: 0.08, pan });
+          this._tone({ f0: 95 * v, f1: 60, gain: 0.05 * g, decay: 0.05, pan });
+          if (opts.heavy) this._burst({ type: 'highpass', freq: 2500, gain: 0.02, decay: 0.05, pan, delay: 0.02 });
         }
+        break;
+      }
+      case 'breath':
+        // 들숨 → 날숨
+        this._burst({ type: 'bandpass', freq: 1100, q: 0.7, gain: 0.05, attack: 0.25, decay: 0.3 });
+        this._burst({ type: 'bandpass', freq: 650, q: 0.6, gain: 0.06, attack: 0.08, decay: 0.45, delay: 0.42 });
         break;
       case 'clue':
         for (let i = 0; i < 3; i++) this._burst({ type: 'bandpass', freq: 3800 + Math.random() * 1500, q: 1.2, gain: 0.07, decay: 0.06, delay: i * 0.07 });

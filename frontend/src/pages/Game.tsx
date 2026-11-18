@@ -35,6 +35,7 @@ const NOISE = noiseDataURL(180, 0.55);
 const GLYPHS = glyphBandDataURL();
 const GRIT = noiseDataURL(160, 0.1);
 const MUTE_KEY = 'escape-muted';
+const MOTION_KEY = 'escape-motion';
 let msgSeq = 0;
 
 const toEngineRooms = (s: SessionState): EngineRoom[] =>
@@ -54,6 +55,17 @@ function objectiveSummary(room: SessionRoom): string {
   if (room.has_puzzle) parts.push(room.puzzle_solved ? '🔓 암호' : '🔒 암호');
   if (room.minigame) parts.push(room.minigame.key_used ? '🔑 사용' : room.minigame.key_obtained ? '🔑 보유' : '🎮 시험');
   return parts.join('  ');
+}
+
+/** 화면 흔들림 기본값: 운영체제의 '동작 줄이기'를 켰으면 꺼진 상태로 시작 */
+function loadMotion(): boolean {
+  try {
+    const v = localStorage.getItem(MOTION_KEY);
+    if (v !== null) return v === '1';
+  } catch {
+    /* 저장 불가 환경 */
+  }
+  return !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 }
 
 function loadMuted(): boolean {
@@ -83,6 +95,8 @@ export default function Game({ sessionId, playerName, onExit }: Props) {
   const [toast, setToast] = useState<Toast | null>(null);
   const [scare, setScare] = useState<'' | 'blackout' | 'rumble'>('');
   const [muted, setMuted] = useState(loadMuted);
+  const [motionOn, setMotionOn] = useState(loadMotion);
+  const [stamina, setStamina] = useState({ v: 1, ex: false });
 
   const containerRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<EscapeEngine | null>(null);
@@ -99,6 +113,8 @@ export default function Game({ sessionId, playerName, onExit }: Props) {
   const toastTimer = useRef<number>();
   const scareTimer = useRef<number>();
   modalRef.current = modal;
+  const motionRef = useRef(motionOn);
+  motionRef.current = motionOn;
 
   const kind = themeKind(state?.theme.style.decor);
   const copy = COPY[kind];
@@ -310,6 +326,8 @@ export default function Game({ sessionId, playerName, onExit }: Props) {
       style: state.theme.style,
       startPosition: posRef.current,
       audio: audioRef.current,
+      motion: motionRef.current ? 1 : 0.2,
+      onStamina: (v, ex) => setStamina({ v, ex }),
       onInteract: (t) => handlersRef.current.onInteract(t),
       onRoomChange: (slot) => setCurrentSlot(slot),
       onLockChange: (locked) => {
@@ -343,6 +361,15 @@ export default function Game({ sessionId, playerName, onExit }: Props) {
   useEffect(() => {
     if (state) engineRef.current?.setRooms(toEngineRooms(state));
   }, [state]);
+
+  useEffect(() => {
+    engineRef.current?.setMotion(motionOn ? 1 : 0.2);
+    try {
+      localStorage.setItem(MOTION_KEY, motionOn ? '1' : '0');
+    } catch {
+      /* 저장 불가 환경 */
+    }
+  }, [motionOn, worldKey]);
 
   const others = useMemo(() => Object.values(players).filter((p) => p.id !== myId), [players, myId]);
   useEffect(() => {
@@ -437,6 +464,11 @@ export default function Game({ sessionId, playerName, onExit }: Props) {
             <i key={r.slot} className={r.status} title={r.name} />
           ))}
         </div>
+        {stamina.v < 0.995 && (
+          <div className={`stamina ${stamina.ex ? 'ex' : ''}`} title="스태미나">
+            <i style={{ width: `${stamina.v * 100}%` }} />
+          </div>
+        )}
       </div>
       <div className="hud top-right">
         <div className="code">
@@ -457,6 +489,13 @@ export default function Game({ sessionId, playerName, onExit }: Props) {
           </button>
           <button onClick={() => setMuted((m) => !m)} title={muted ? '소리 켜기' : '소리 끄기'}>
             {muted ? '🔇' : '🔊'}
+          </button>
+          <button
+            className={motionOn ? '' : 'off'}
+            onClick={() => setMotionOn((v) => !v)}
+            title={motionOn ? '화면 흔들림 줄이기 (멀미 방지)' : '화면 흔들림 켜기'}
+          >
+            🎥
           </button>
           <button onClick={() => openModal({ kind: 'admin' })} title="관리자">
             🛠
