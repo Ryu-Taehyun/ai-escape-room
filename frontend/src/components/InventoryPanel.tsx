@@ -3,18 +3,20 @@ import type { SessionState } from '../types';
 
 interface Props {
   state: SessionState;
+  title?: string;
+  empty?: string;
   onClose: () => void;
 }
 
-export default function InventoryPanel({ state, onClose }: Props) {
+export default function InventoryPanel({ state, title = '팀 인벤토리', empty, onClose }: Props) {
   return (
     <div className="overlay" onClick={onClose}>
       <div className="panel inventory" onClick={(e) => e.stopPropagation()}>
         <div className="panel-head">
-          <h2>🎒 팀 인벤토리</h2>
+          <h2>{title}</h2>
           <button onClick={onClose}>닫기 (I)</button>
         </div>
-        {state.inventory.length === 0 && <p className="muted">아직 아무것도 찾지 못했습니다. 방 안의 반짝이는 물건을 조사해 보세요.</p>}
+        {state.inventory.length === 0 && <p className="muted">{empty ?? '아직 아무것도 찾지 못했습니다. 방 안의 반짝이는 물건을 조사해 보세요.'}</p>}
         {state.rooms.map((room) => {
           const items = state.inventory.filter((i) => i.slot === room.slot);
           if (items.length === 0) return null;

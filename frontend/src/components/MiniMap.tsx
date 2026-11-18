@@ -7,6 +7,7 @@ interface Props {
   myPos: Vec3;
   myName: string;
   players: RemotePlayer[];
+  title?: string;
   onClose: () => void;
 }
 
@@ -22,7 +23,7 @@ const STATUS = {
 const toX = (x: number) => (x + HALF) * SCALE;
 const toY = (z: number) => (z + HALF) * SCALE;
 
-export default function MiniMap({ rooms, currentSlot, myPos, myName, players, onClose }: Props) {
+export default function MiniMap({ rooms, currentSlot, myPos, myName, players, title = '지도', onClose }: Props) {
   const width = rooms.length * ROOM_SIZE * SCALE;
   const height = ROOM_SIZE * SCALE;
   const cleared = rooms.filter((r) => r.status === 'cleared').length;
@@ -31,7 +32,7 @@ export default function MiniMap({ rooms, currentSlot, myPos, myName, players, on
     <div className="overlay" onClick={onClose}>
       <div className="panel map-panel" onClick={(e) => e.stopPropagation()}>
         <div className="panel-head">
-          <h2>지도</h2>
+          <h2>{title}</h2>
           <span>
             클리어 {cleared} / {rooms.length}
           </span>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { api } from '../api/client';
 import type { GameConfig, RoomBrief, ThemeSummary } from '../types';
 import type { JoinInfo } from '../App';
+import { glyphBandDataURL, noiseDataURL } from '../game/textures';
 
 interface Props {
   onJoin: (info: JoinInfo) => void;
@@ -15,12 +16,47 @@ const THEME_META: Record<string, { icon: string; mood: string; tags: string[] }>
   pillar: { icon: '🏺', mood: '모험', tags: ['고대 이집트', '수수께끼', '보물'] },
   none: { icon: '🚪', mood: '커스텀', tags: ['AI 생성'] },
 };
-const FEATURES = [
-  { icon: '🔎', title: '단서 탐색', text: '방 곳곳의 물건을 직접 조사해 퍼즐 조각을 모으세요' },
-  { icon: '🎮', title: '미니게임', text: '기억력·전선·타이밍 게임을 통과해 열쇠를 얻으세요' },
-  { icon: '👥', title: '실시간 협동', text: '방 코드 하나로 친구와 같은 공간에서 탈출하세요' },
-  { icon: '🤖', title: 'AI 퍼즐', text: 'AI가 새로운 방과 힌트를 만들어 냅니다' },
-];
+const NOISE = noiseDataURL(200, 0.6);
+const GRIT = noiseDataURL(160, 0.1);
+const GLYPH_BAND = glyphBandDataURL();
+
+/** 선택한 테마에 따라 바뀌는 로비 문구 */
+const LOBBY_COPY: Record<string, { badge: string; sub: string[]; start: string; features: { icon: string; title: string; text: string }[]; log?: string[] }> = {
+  server: {
+    badge: '⚠ 격리 프로토콜 가동 중 · 생존자 신호 감지',
+    sub: ['정신을 차려 보니 서버실 바닥이었다. 비상등만 붉게 깜빡인다.', '이 건물 안에, 당신 말고 무언가가 있다.'],
+    start: '들어간다',
+    features: [
+      { icon: '🔦', title: '손전등 하나', text: '어둠 속을 비춰 증거를 찾아라. 배터리는 믿을 수 없다' },
+      { icon: '🖥', title: '감염된 단말기', text: '흩어진 메모를 조합해 보안 코드를 풀어라' },
+      { icon: '⚡', title: '제어 패널', text: '끊어진 전선을 잇고 금고를 열어 카드키를 얻어라' },
+      { icon: '👁', title: '그것', text: '불이 꺼지면, 뒤를 보지 마라' },
+    ],
+    log: ['[03:17:42] 격리 프로토콜 가동', '[03:17:44] 생존자 신호 1건 감지 — 서버실 B-2', '[03:17:45] 출입 통제 해제 실패', '[03:17:51] 미확인 개체 이동 감지'],
+  },
+  pillar: {
+    badge: '𓂀 기원전 1323년 · 봉인된 왕의 무덤',
+    sub: ['도굴꾼의 지도는 여기서 끝난다. 등 뒤로 돌문이 내려앉았다.', '횃불이 꺼지기 전에, 신들의 시험을 통과하라.'],
+    start: '봉인을 연다',
+    features: [
+      { icon: '🔥', title: '횃불', text: '흔들리는 불빛 아래 숨겨진 상형문자를 읽어라' },
+      { icon: '☥', title: '신성한 비문', text: '파피루스와 석판의 단서로 제단의 답을 새겨라' },
+      { icon: '⚖', title: '신의 시험', text: '심판의 저울과 기억의 문양을 넘어 열쇠를 얻어라' },
+      { icon: '⏳', title: '모래시계', text: '모래가 다 떨어지면 무덤은 다시 봉인된다' },
+    ],
+  },
+  none: {
+    badge: 'ESCAPE ROOM',
+    sub: ['단서를 찾고, 미니게임으로 열쇠를 얻고, 제한 시간 안에 빠져나가세요.', 'AI가 만든 방에서 친구와 함께 협동할 수 있습니다.'],
+    start: '게임 시작',
+    features: [
+      { icon: '🔎', title: '단서 탐색', text: '방 곳곳의 물건을 직접 조사해 퍼즐 조각을 모으세요' },
+      { icon: '🎮', title: '미니게임', text: '기억력·전선·타이밍 게임을 통과해 열쇠를 얻으세요' },
+      { icon: '👥', title: '실시간 협동', text: '방 코드 하나로 친구와 같은 공간에서 탈출하세요' },
+      { icon: '🤖', title: 'AI 퍼즐', text: 'AI가 새로운 방과 힌트를 만들어 냅니다' },
+    ],
+  },
+};
 const RANDOM_NAMES = ['그림자', '탐정', '도굴꾼', '해커', '모험가', '방랑자', '수집가', '관찰자'];
 
 function loadName(): string {
@@ -77,7 +113,7 @@ export default function Lobby({ onJoin }: Props) {
 
   const selected = themes.find((t) => t.key === themeKey);
   const decor = selected?.style.decor ?? 'none';
-  const meta = THEME_META[decor] ?? THEME_META.none;
+  const lc = LOBBY_COPY[decor] ?? LOBBY_COPY.none;
 
   const route: RoomBrief[] = useMemo(() => {
     if (!selected) return [];
@@ -97,6 +133,9 @@ export default function Lobby({ onJoin }: Props) {
     '--glow': selected?.style.light ?? '#7c4dff',
     '--fog': selected?.style.fog ?? '#0d0f12',
     '--wall': selected?.style.wall ?? '#1a1d22',
+    '--noise': `url(${NOISE})`,
+    '--grit': `url(${GRIT})`,
+    '--glyphs': `url(${GLYPH_BAND})`,
   } as CSSProperties;
 
   function updateName(v: string) {
@@ -149,25 +188,45 @@ export default function Lobby({ onJoin }: Props) {
           ))}
         </div>
         <div className="scanlines" />
+        <div className="grain" />
         <div className="vignette" />
       </div>
+      {decor === 'server' && (
+        <svg className="blood-drips" viewBox="0 0 1200 120" preserveAspectRatio="none" aria-hidden>
+          <path d="M0 0H1200V18C1150 22 1140 70 1128 72 1116 74 1112 26 1060 24 1010 22 1000 96 986 98 972 100 968 30 900 26 840 22 836 58 826 60 816 62 806 24 740 22 680 20 676 110 662 112 648 114 640 30 560 26 500 22 496 64 486 66 476 68 466 24 400 22 340 20 330 84 318 86 306 88 300 28 230 24 170 20 164 50 156 52 148 54 140 22 80 20 30 18 24 76 14 78 6 80 2 30 0 24Z" />
+        </svg>
+      )}
+      {decor === 'pillar' && (
+        <>
+          <div className="glyph-band top" aria-hidden />
+          <div className="torch-glow left" aria-hidden />
+          <div className="torch-glow right" aria-hidden />
+        </>
+      )}
 
       <div className="lobby-inner">
         {/* ---------- 히어로 ---------- */}
         <header className="hero">
-          <div className="hero-badge">
-            {meta.icon} {selected ? `${meta.mood} 테마 선택됨` : 'ESCAPE ROOM'}
-          </div>
+          <div className="hero-badge">{lc.badge}</div>
           <h1 className="hero-title" data-text="AI 방탈출">
             AI 방탈출
           </h1>
           <p className="hero-sub">
-            단서를 찾고, 미니게임으로 열쇠를 얻고, 제한 시간 안에 빠져나가세요.
+            {lc.sub[0]}
             <br />
-            AI가 만든 방에서 친구와 함께 협동할 수 있습니다.
+            {lc.sub[1]}
           </p>
+          {lc.log && (
+            <div className="sys-log" aria-hidden>
+              {lc.log.map((l, i) => (
+                <div key={l} style={{ animationDelay: `${0.3 + i * 0.7}s` }}>
+                  {l}
+                </div>
+              ))}
+            </div>
+          )}
           <div className="features">
-            {FEATURES.map((f) => (
+            {lc.features.map((f) => (
               <div key={f.title} className="feature">
                 <span className="feature-icon">{f.icon}</span>
                 <b>{f.title}</b>
@@ -205,7 +264,7 @@ export default function Lobby({ onJoin }: Props) {
                 return (
                   <button
                     key={t.key}
-                    className={`tcard ${t.key === themeKey ? 'active' : ''}`}
+                    className={`tcard tcard-${t.style.decor} ${t.key === themeKey ? 'active' : ''}`}
                     style={{ '--c': t.style.accent, '--bg1': t.style.fog, '--bg2': t.style.wall } as CSSProperties}
                     onClick={() => setThemeKey(t.key)}
                   >
@@ -297,7 +356,7 @@ export default function Lobby({ onJoin }: Props) {
             )}
 
             <button className="start-btn" disabled={busy || !themeKey} onClick={create}>
-              {busy ? '방을 준비하는 중...' : '▶ 게임 시작'}
+              {busy ? '방을 준비하는 중...' : lc.start}
             </button>
           </section>
 

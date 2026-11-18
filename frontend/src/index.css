@@ -316,3 +316,375 @@ button.big { font-size: 1.2em; padding: 10px 32px; }
 /* ---------- Admin: 단서 편집 ---------- */
 .clue-edit { border-left: 3px solid #ffd54a; padding-left: 8px; margin: 8px 0; }
 .room-edit h4 { margin: 14px 0 4px; }
+
+/* =====================================================================
+   몰입형 테마 (공포 / 이집트) — 게임 화면
+   ===================================================================== */
+.game { background: #000; }
+.canvas-wrap { z-index: 0; }
+.fx-layer { position: absolute; inset: 0; pointer-events: none; z-index: 1; overflow: hidden; }
+.fx-grain { position: absolute; inset: -120px; background-image: var(--noise); opacity: 0.07; animation: grain-shift 0.6s steps(3) infinite; }
+@keyframes grain-shift {
+  0% { transform: translate(0, 0); }
+  33% { transform: translate(-40px, 25px); }
+  66% { transform: translate(30px, -35px); }
+  100% { transform: translate(-15px, 10px); }
+}
+.fx-vignette { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.6) 100%); }
+.fx-flash { position: absolute; inset: 0; opacity: 0; }
+.theme-horror .fx-grain { opacity: 0.13; }
+.theme-horror .fx-vignette { background: radial-gradient(ellipse at center, transparent 32%, rgba(0, 0, 0, 0.88) 100%); }
+.theme-egypt .fx-grain { opacity: 0.06; }
+.theme-egypt .fx-vignette { background: radial-gradient(ellipse at center, transparent 45%, rgba(40, 20, 5, 0.72) 100%); }
+.fx-low .fx-vignette { animation: low-pulse 1s ease-in-out infinite; }
+@keyframes low-pulse { 50% { box-shadow: inset 0 0 200px rgba(170, 0, 0, 0.6); } }
+.fx-blackout .fx-flash { background: #000; animation: blackout 1.8s steps(1) forwards; }
+@keyframes blackout {
+  0% { opacity: 0.85; } 8% { opacity: 0.2; } 12% { opacity: 0.9; } 70% { opacity: 0.7; }
+  75% { opacity: 0; } 80% { opacity: 0.45; background: #3a0000; } 100% { opacity: 0; }
+}
+.fx-blackout .canvas-wrap { animation: glitch-shift 0.35s steps(2) 3; }
+@keyframes glitch-shift { 50% { transform: translate(5px, -2px); filter: hue-rotate(-25deg) saturate(2.2); } }
+.fx-rumble .canvas-wrap { animation: rumble 0.12s linear 12; }
+@keyframes rumble { 25% { transform: translate(4px, 2px); } 50% { transform: translate(-3px, -2px); } 75% { transform: translate(2px, -3px); } }
+.fx-rumble .fx-flash { background: var(--noise), rgba(200, 160, 90, 0.28); animation: sandfade 1.8s forwards; }
+@keyframes sandfade { 0% { opacity: 0; } 15% { opacity: 1; } 100% { opacity: 0; } }
+.scare-text { position: absolute; left: 50%; top: 64%; transform: translateX(-50%); z-index: 4; pointer-events: none; opacity: 0; animation: scare-t 1.8s forwards; white-space: nowrap; }
+.theme-horror .scare-text { font-family: 'East Sea Dokdo', cursive; font-size: 2.6em; color: #d01010; text-shadow: 0 0 12px #000; }
+.theme-egypt .scare-text { font-family: 'Song Myung', serif; font-size: 1.6em; color: #f3d69a; text-shadow: 0 0 10px #000; }
+@keyframes scare-t { 0%, 40% { opacity: 0; } 55% { opacity: 1; } 100% { opacity: 0; } }
+
+.crosshair {
+  position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; transform: none;
+  border-radius: 50%; background: rgba(255, 255, 255, 0.55); z-index: 3; pointer-events: none; transition: all 0.15s; font-size: 0;
+}
+.crosshair.on { width: 24px; height: 24px; margin: -12px 0 0 -12px; background: transparent; border: 2px solid rgba(255, 255, 255, 0.85); }
+.theme-egypt .crosshair.on { border-color: #ffd27a; box-shadow: 0 0 10px rgba(255, 200, 90, 0.6); }
+.focus-tip { z-index: 3; top: calc(50% + 30px); background: rgba(0, 0, 0, 0.55); border: 1px solid rgba(255, 255, 255, 0.15); padding: 6px 14px; font-size: 0.95em; white-space: nowrap; }
+.focus-tip span { opacity: 0.7; }
+.theme-horror .focus-tip { font-family: 'Nanum Gothic Coding', monospace; color: #d8e6f0; background: rgba(5, 8, 10, 0.72); border-radius: 2px; }
+.theme-egypt .focus-tip { font-family: 'Gowun Batang', serif; color: #ffe6b0; background: rgba(30, 18, 6, 0.75); border-color: #a07b2c; }
+
+/* HUD */
+.hud { z-index: 3; }
+.timer-label { font-size: 0.7em; letter-spacing: 0.22em; opacity: 0.7; }
+.hud-room { font-weight: 700; }
+.hud-progress { display: flex; gap: 4px; margin-top: 6px; }
+.hud-progress i { width: 18px; height: 5px; border-radius: 2px; background: #444; }
+.hud-progress i.cleared { background: #4caf50; }
+.hud-progress i.unlocked { background: #d0a020; }
+.hud kbd { font-size: 0.72em; padding: 0 5px; }
+.theme-horror .hud { background: rgba(4, 6, 7, 0.74); border: 1px solid #262b2e; font-family: 'Nanum Gothic Coding', monospace; color: #b9c6cc; border-radius: 3px; }
+.theme-horror .timer { font-family: 'Nanum Gothic Coding', monospace; color: #ff3b2b; text-shadow: 0 0 8px rgba(255, 40, 20, 0.8); letter-spacing: 0.06em; font-size: 2em; }
+.theme-horror .hud-progress i.cleared { background: #38d26a; }
+.theme-horror .hud-progress i.unlocked { background: #ff3b2b; }
+.theme-horror .hud button { background: #11151a; border-color: #2d3438; color: #b9c6cc; border-radius: 3px; font-family: inherit; }
+.theme-horror .code b { color: #ff5b4b; }
+.theme-horror .objective { color: #8fd8ff; }
+.theme-egypt .hud { background: linear-gradient(180deg, rgba(45, 28, 10, 0.88), rgba(25, 14, 4, 0.88)); border: 1px solid #a07b2c; color: #f0dcae; font-family: 'Gowun Batang', serif; border-radius: 4px; box-shadow: inset 0 0 0 3px rgba(0, 0, 0, 0.25); }
+.theme-egypt .timer { font-family: 'Cinzel', 'Song Myung', serif; color: #ffd77a; text-shadow: 0 0 10px rgba(255, 180, 60, 0.6); }
+.theme-egypt .hud-progress i.cleared { background: #ffcf5a; }
+.theme-egypt .hud-progress i.unlocked { background: #b5651d; }
+.theme-egypt .hud button { background: rgba(80, 50, 15, 0.85); border-color: #a07b2c; color: #f6e2b4; }
+.theme-egypt .code b { color: #ffd77a; }
+.theme-egypt .objective { color: #ffe0a0; }
+
+/* 첫 입장 */
+.intro { position: absolute; inset: 0; z-index: 8; display: grid; place-items: center; padding: 16px; cursor: pointer; background: rgba(0, 0, 0, 0.6); }
+.intro-card { max-width: 640px; padding: 32px 34px; position: relative; }
+.intro-eyebrow { font-size: 0.8em; letter-spacing: 0.16em; margin-bottom: 10px; }
+.intro-title { margin: 0 0 18px; font-size: clamp(1.6rem, 4.5vw, 2.6rem); line-height: 1.25; text-wrap: balance; }
+.intro-line { opacity: 0; animation: line-in 0.9s forwards; line-height: 1.85; margin: 0 0 6px; }
+@keyframes line-in { to { opacity: 1; } }
+.intro-action { margin-top: 26px; display: inline-block; padding: 10px 24px; animation: pulse-a 1.6s ease-in-out infinite; }
+@keyframes pulse-a { 50% { opacity: 0.45; } }
+.intro-controls { margin-top: 16px; font-size: 0.8em; opacity: 0.65; }
+.theme-horror .intro { background: radial-gradient(ellipse at center, rgba(25, 0, 0, 0.55), rgba(0, 0, 0, 0.94)); }
+.theme-horror .intro-card { font-family: 'Nanum Gothic Coding', monospace; color: #c9d2d6; }
+.theme-horror .intro-eyebrow { color: #ff3b2b; animation: badge-blink 2.4s steps(1) infinite; }
+.theme-horror .intro-title { font-family: 'East Sea Dokdo', 'Nanum Brush Script', cursive; font-weight: 400; font-size: clamp(2.6rem, 7vw, 4.2rem); color: #e8e2da; text-shadow: 0 0 18px rgba(180, 0, 0, 0.6), 3px 0 rgba(140, 0, 0, 0.8); animation: title-flicker 5s infinite; }
+@keyframes title-flicker { 0%, 93%, 100% { opacity: 1; } 94% { opacity: 0.3; } 96% { opacity: 0.9; } 97% { opacity: 0.15; } }
+@keyframes badge-blink { 50% { opacity: 0.5; } }
+.theme-horror .intro-action { border: 1px solid #8a1010; color: #ff6b5b; background: rgba(60, 0, 0, 0.35); }
+.theme-egypt .intro { background: radial-gradient(ellipse at center, rgba(40, 20, 0, 0.45), rgba(10, 5, 0, 0.92)); }
+.theme-egypt .intro-card { background: var(--grit), linear-gradient(180deg, #e6d3a2, #cbb079); color: #3a2410; border: 2px solid #8a6420; box-shadow: 0 0 0 6px rgba(0, 0, 0, 0.35), 0 20px 60px #000; font-family: 'Gowun Batang', serif; padding-top: 60px; border-radius: 3px; }
+.theme-egypt .intro-card::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 38px; background: var(--glyphs) repeat-x; background-size: auto 38px; border-bottom: 2px solid #8a6420; }
+.theme-egypt .intro-eyebrow { color: #7a4a14; font-family: 'Song Myung', serif; }
+.theme-egypt .intro-title { font-family: 'Song Myung', serif; color: #3a200a; font-weight: 400; }
+.theme-egypt .intro-action { border: 1px solid #8a6420; color: #5a3410; background: rgba(255, 220, 140, 0.45); }
+.resume-hint { position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); z-index: 4; pointer-events: none; font-size: 0.85em; padding: 6px 14px; background: rgba(0, 0, 0, 0.6); border-radius: 999px; opacity: 0.85; }
+
+/* 즉시 알림 */
+.toast { position: absolute; left: 50%; bottom: 24%; transform: translateX(-50%); z-index: 5; max-width: min(560px, 90vw); padding: 12px 18px; pointer-events: none; animation: toast-in 0.25s ease-out; text-align: center; line-height: 1.5; background: rgba(0, 0, 0, 0.8); border-radius: 8px; }
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 10px); } }
+.theme-horror .toast { font-family: 'Nanum Gothic Coding', monospace; background: rgba(8, 6, 6, 0.88); border-left: 3px solid #c01818; color: #e9d8d6; border-radius: 2px; }
+.theme-horror .toast-good { border-left-color: #38d26a; }
+.theme-egypt .toast { font-family: 'Gowun Batang', serif; background: linear-gradient(180deg, rgba(45, 28, 10, 0.94), rgba(30, 18, 6, 0.94)); border: 1px solid #a07b2c; color: #f6e2b4; border-radius: 3px; }
+.theme-egypt .toast-good { border-color: #ffd77a; box-shadow: 0 0 24px rgba(255, 200, 90, 0.35); }
+
+/* 단서 문서 (게임을 멈추지 않음) */
+.clue-doc {
+  position: absolute; right: max(24px, 4vw); top: 50%; z-index: 5; width: min(340px, 78vw); padding: 26px 26px 46px;
+  pointer-events: none; transform: translateY(-50%) rotate(-1.5deg); animation: doc-in 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6);
+}
+@keyframes doc-in { from { opacity: 0; transform: translate(30px, -50%) rotate(5deg); } }
+.doc-label { font-size: 0.78em; letter-spacing: 0.12em; opacity: 0.7; margin-bottom: 8px; }
+.doc-text { font-size: 1.15em; line-height: 1.55; white-space: pre-wrap; }
+.doc-stamp { position: absolute; right: 16px; bottom: 12px; padding: 3px 10px; font-size: 0.78em; font-weight: 700; transform: rotate(-8deg); }
+.doc-stamp:not(.new) { opacity: 0.55; }
+.doc-paper {
+  background:
+    radial-gradient(circle at 82% 18%, rgba(110, 70, 20, 0.22) 0 38px, transparent 40px),
+    radial-gradient(circle at 18% 82%, rgba(95, 5, 5, 0.55) 0 9px, transparent 10px),
+    radial-gradient(circle at 24% 88%, rgba(95, 5, 5, 0.45) 0 4px, transparent 5px),
+    linear-gradient(170deg, #ebe2c8, #cdbf9a);
+  color: #1f1c2a;
+  clip-path: polygon(0 3%, 8% 0, 22% 2%, 38% 0, 55% 3%, 70% 0, 86% 2%, 100% 0, 98% 30%, 100% 62%, 97% 100%, 70% 97%, 45% 100%, 20% 97%, 0 100%, 2% 60%);
+}
+.doc-paper .doc-text, .doc-notebook .doc-text, .doc-whiteboard .doc-text, .doc-tag .doc-text { font-family: 'Nanum Pen Script', cursive; font-size: 1.75em; line-height: 1.25; }
+.doc-notebook {
+  background: linear-gradient(90deg, transparent 34px, rgba(200, 50, 50, 0.45) 34px 36px, transparent 36px), repeating-linear-gradient(180deg, #f1ecd9 0 27px, rgba(70, 100, 170, 0.35) 27px 28px);
+  color: #1b2140; padding-left: 50px;
+}
+.doc-whiteboard { background: #e6e9e6; border: 10px solid #8d9398; color: #1c3a8a; box-shadow: inset 0 0 40px rgba(120, 130, 140, 0.35), 0 14px 40px rgba(0, 0, 0, 0.6); }
+.doc-tag { background: var(--grit), linear-gradient(180deg, #a8854f, #94713f); color: #16110a; }
+.doc-tag .doc-text { background: rgba(232, 218, 175, 0.9); padding: 8px 10px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); }
+.doc-papyrus {
+  background: repeating-linear-gradient(90deg, rgba(120, 90, 40, 0.1) 0 2px, transparent 2px 7px), repeating-linear-gradient(0deg, rgba(120, 90, 40, 0.08) 0 2px, transparent 2px 9px), radial-gradient(ellipse at center, #e9d7a6, #c7aa6b);
+  color: #3a2410; border-left: 12px solid #a9834a; border-right: 12px solid #a9834a; border-radius: 3px;
+}
+.doc-papyrus .doc-text { font-family: 'Gowun Batang', serif; font-size: 1.12em; }
+.doc-stone { background: var(--grit), linear-gradient(160deg, #b59565, #8e7046); color: #33210c; text-shadow: 1px 1px 0 rgba(255, 235, 190, 0.45), -1px -1px 0 rgba(0, 0, 0, 0.25); border: 3px solid #6e5028; }
+.doc-stone .doc-text { font-family: 'Song Myung', serif; font-size: 1.18em; }
+.doc-plain { background: #171a1f; border: 1px solid #333; border-radius: 10px; color: #eee; transform: translateY(-50%); }
+.theme-horror .doc-stamp { border: 2px solid #a01010; color: #a01010; font-family: 'Nanum Gothic Coding', monospace; }
+.theme-egypt .doc-stamp { background: radial-gradient(circle, #e2b443, #a7781a); color: #2e1a06; border-radius: 999px; font-family: 'Song Myung', serif; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4); }
+
+/* 퍼즐 창 */
+.pz { position: relative; width: min(720px, 100%); max-height: calc(100vh - 32px); overflow: auto; }
+.pz-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+.pz-boot p { margin: 0; opacity: 0; animation: line-in 0.25s forwards; }
+.pz-desc { opacity: 0.82; margin: 12px 0; }
+.pz-question { white-space: pre-wrap; font-family: inherit; font-size: 1.08em; margin: 14px 0; padding: 12px 14px; }
+.pz-label { font-size: 0.75em; letter-spacing: 0.15em; opacity: 0.7; margin: 12px 0 6px; }
+.pz-clue, .pz-hint { padding: 4px 0 4px 10px; margin: 3px 0; font-size: 0.92em; }
+.pz-clue b { margin-right: 6px; }
+.pz-missing { opacity: 0.6; font-size: 0.85em; font-style: italic; }
+.pz-message { margin: 14px 0 4px; font-weight: 700; }
+.pz-input { display: flex; gap: 8px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
+.pz-input input { flex: 1; min-width: 140px; }
+.pz.shake-0 { animation: pz-shake-a 0.45s; }
+.pz.shake-1 { animation: pz-shake-b 0.45s; }
+@keyframes pz-shake-a { 20% { transform: translateX(-10px); } 40% { transform: translateX(9px); } 60% { transform: translateX(-6px); } 80% { transform: translateX(4px); } }
+@keyframes pz-shake-b { 20% { transform: translateX(-10px); } 40% { transform: translateX(9px); } 60% { transform: translateX(-6px); } 80% { transform: translateX(4px); } }
+.pz-neutral .pz { background: #171a1f; border: 1px solid #333; border-radius: 12px; padding: 18px; }
+
+.pz-horror .pz { background: linear-gradient(180deg, #34362f, #23251f); padding: 22px; border-radius: 28px; box-shadow: inset 0 0 0 2px #44463e, inset 0 6px 14px rgba(255, 255, 255, 0.08), 0 30px 80px #000; }
+.pz-horror .pz-head { color: #8b8f80; font-family: 'Nanum Gothic Coding', monospace; font-size: 0.8em; letter-spacing: 0.1em; padding: 0 8px; }
+.pz-horror .pz-screen {
+  position: relative; background: radial-gradient(ellipse at center, #08301a 0%, #021008 80%); border-radius: 20px / 16px; padding: 22px 24px;
+  color: #46ff86; font-family: 'Nanum Gothic Coding', Consolas, monospace; text-shadow: 0 0 6px rgba(70, 255, 134, 0.6);
+  box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.9), inset 0 0 12px rgba(70, 255, 134, 0.25); overflow: hidden; min-height: 300px;
+}
+.pz-horror .pz-screen::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.28) 0 2px, transparent 2px 4px); }
+.pz-horror .pz-question { border-left: 2px solid #46ff86; background: rgba(70, 255, 134, 0.06); }
+.pz-horror .pz-input input { background: transparent; border: none; border-bottom: 1px solid rgba(70, 255, 134, 0.5); border-radius: 0; color: #a8ffc6; font-family: inherit; font-size: 1.1em; caret-color: #46ff86; text-shadow: inherit; outline: none; }
+.pz-horror .pz-input input::placeholder { color: rgba(70, 255, 134, 0.35); }
+.pz-horror .pz-prompt { font-weight: 700; }
+.pz-horror .pz-btn { background: transparent; border: 1px solid rgba(70, 255, 134, 0.6); color: #46ff86; font-family: inherit; border-radius: 2px; text-shadow: inherit; }
+.pz-horror .pz-btn:hover:not(:disabled) { background: rgba(70, 255, 134, 0.15); }
+.pz-horror .pz-btn.primary { background: rgba(70, 255, 134, 0.18); }
+.pz-horror .pz-close { background: transparent; border: 1px solid #555; color: #9aa; font-family: inherit; font-size: 0.9em; }
+.pz-horror .pz-clue, .pz-horror .pz-hint { border-left: 1px dashed rgba(70, 255, 134, 0.5); }
+.pz-horror .pz-message.bad { color: #ff4a3a; text-shadow: 0 0 8px rgba(255, 60, 40, 0.8); }
+.pz-horror .pz-message.good { color: #c6ffd9; font-size: 1.3em; letter-spacing: 0.08em; }
+.pz-horror .pz-denied .pz-screen { animation: crt-red 0.7s; }
+@keyframes crt-red { 0%, 60% { background: radial-gradient(ellipse at center, #3a0606, #120202); color: #ff4a3a; } }
+.pz-horror .pz-granted .pz-screen { animation: crt-green 1s; }
+@keyframes crt-green { 0% { filter: brightness(2.4); } 100% { filter: brightness(1); } }
+
+.pz-egypt .pz {
+  background: var(--grit), linear-gradient(170deg, #cba86d 0%, #a8844e 60%, #8f6d3c 100%); color: #3a2410; border: 3px solid #6e5028;
+  box-shadow: inset 0 0 0 8px rgba(0, 0, 0, 0.08), inset 0 0 50px rgba(60, 35, 10, 0.5), 0 30px 80px #000; padding: 56px 30px 26px; border-radius: 6px 6px 44px 44px;
+}
+.pz-egypt .pz::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 40px; background: var(--glyphs) repeat-x; background-size: auto 40px; border-bottom: 3px solid #6e5028; }
+.pz-egypt .pz-head { font-family: 'Song Myung', serif; letter-spacing: 0.1em; }
+.pz-egypt .pz-screen { font-family: 'Gowun Batang', serif; text-shadow: 1px 1px 0 rgba(255, 236, 190, 0.45); }
+.pz-egypt .pz-boot p:first-child { font-family: 'Song Myung', serif; font-size: 1.6em; color: #2e1a06; }
+.pz-egypt .pz-question { font-family: 'Song Myung', serif; font-size: 1.18em; color: #2a1604; background: rgba(60, 35, 10, 0.12); box-shadow: inset 2px 2px 6px rgba(0, 0, 0, 0.35), inset -1px -1px 0 rgba(255, 236, 190, 0.4); border-radius: 4px; }
+.pz-egypt .pz-clue, .pz-egypt .pz-hint { border-left: 2px solid #8a6420; }
+.pz-egypt .pz-input input { background: rgba(60, 35, 10, 0.25); border: none; box-shadow: inset 2px 2px 6px rgba(0, 0, 0, 0.45), inset -1px -1px 0 rgba(255, 236, 190, 0.4); color: #2a1604; font-family: 'Song Myung', serif; font-size: 1.15em; border-radius: 3px; }
+.pz-egypt .pz-input input::placeholder { color: rgba(60, 35, 10, 0.55); }
+.pz-egypt .pz-btn, .pz-egypt .pz-close { background: linear-gradient(180deg, #f2d27a, #b8891e); border: 1px solid #6e5028; color: #2e1a06; font-family: 'Gowun Batang', serif; font-weight: 700; }
+.pz-egypt .pz-prompt { font-size: 1.6em; color: #6e4210; }
+.pz-egypt .pz-message.bad { color: #7a1a08; }
+.pz-egypt .pz-message.good { color: #2e1a06; font-family: 'Song Myung', serif; font-size: 1.3em; }
+.pz-egypt .pz-granted { animation: gold-glow 1.3s; }
+@keyframes gold-glow { 0% { box-shadow: 0 0 0 4px #ffd77a, 0 0 90px 30px rgba(255, 200, 80, 0.85); } }
+.pz-egypt .pz-denied::after { content: ''; position: absolute; inset: 0; background: var(--noise); pointer-events: none; opacity: 0; animation: sand-drop 1.1s; }
+@keyframes sand-drop { 0% { opacity: 0.9; transform: translateY(-100%); } 100% { opacity: 0; transform: translateY(40%); } }
+
+/* 미니게임 */
+.mg-frame { position: relative; }
+.mg-kicker { display: block; font-size: 0.6em; letter-spacing: 0.2em; opacity: 0.7; }
+.mg-reward { margin: 6px 0 12px; }
+.mg-start { padding: 10px 26px; font-size: 1.05em; }
+.mg-horror .mg-frame { background: var(--grit), linear-gradient(180deg, #5a5f62, #3b4043); border: none; border-radius: 6px; padding: 32px 26px 22px; color: #e6e8e8; box-shadow: inset 0 0 0 2px #2a2d2f, inset 0 2px 0 rgba(255, 255, 255, 0.18), 0 30px 80px #000; font-family: 'Nanum Gothic Coding', monospace; }
+.mg-horror .mg-frame::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 12px; background: repeating-linear-gradient(-45deg, #c9a200 0 14px, #151515 14px 28px); border-radius: 6px 6px 0 0; }
+.mg-horror .mg-stage { background: #0b0d0e; border: 2px solid #222; border-radius: 4px; padding: 16px; box-shadow: inset 0 0 30px #000; }
+.mg-horror .seq-btn { background: radial-gradient(circle at 50% 40%, #3a3f42, #1b1e20); border: 3px solid #111; border-radius: 12px; box-shadow: 0 4px 0 #050505; }
+.mg-horror .seq-btn.lit { background: radial-gradient(circle, #fff6c2, #ffcf3a); }
+.mg-horror .timing-bar { background: repeating-linear-gradient(90deg, #0a1a0e 0 19px, #12331b 19px 20px); border: 1px solid #2a5a3a; }
+.mg-horror .timing-zone { background: rgba(60, 255, 120, 0.35); box-shadow: 0 0 12px rgba(60, 255, 120, 0.6); }
+.mg-horror .timing-needle { background: #ff3b2b; box-shadow: 0 0 10px #ff3b2b; }
+.mg-horror button.primary { background: #a51010; border-color: #ff3b2b; }
+.mg-horror .panel-head button { background: #222; }
+.mg-egypt .mg-frame { background: linear-gradient(180deg, #1b2a4a, #0f1830); border: 3px solid #c9971f; box-shadow: 0 0 0 3px #3a2a08, 0 0 0 6px #c9971f, 0 30px 80px #000; color: #f3e2b2; font-family: 'Gowun Batang', serif; padding-top: 56px; border-radius: 3px; }
+.mg-egypt .mg-frame::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 38px; background: var(--glyphs) repeat-x; background-size: auto 38px; border-bottom: 2px solid #c9971f; }
+.mg-egypt h2 { font-family: 'Song Myung', serif; color: #ffd77a; }
+.mg-egypt .seq-btn { background: linear-gradient(160deg, #c9a66b, #8f6d3c); border: 2px solid #6e5028; box-shadow: inset 2px 2px 6px rgba(255, 236, 190, 0.4), inset -2px -2px 6px rgba(0, 0, 0, 0.4); }
+.mg-egypt .seq-btn.lit { background: radial-gradient(circle, #fff3c4, #ffc94a); box-shadow: 0 0 30px #ffcf5a; }
+.mg-egypt .timing-bar { background: linear-gradient(90deg, #3a2a10, #6e5028, #3a2a10); border: 1px solid #c9971f; }
+.mg-egypt .timing-zone { background: rgba(255, 210, 90, 0.55); }
+.mg-egypt .timing-needle { background: #fff3c4; box-shadow: 0 0 10px #ffd77a; }
+.mg-egypt button.primary, .mg-egypt .panel-head button { background: linear-gradient(180deg, #f2d27a, #b8891e); color: #2e1a06; border-color: #6e5028; }
+.mg-egypt .wires-svg { background: #0a1226; }
+
+/* 인벤토리 / 지도 / 결과 / 채팅 */
+.theme-horror .panel.inventory { background: var(--grit), linear-gradient(180deg, #d7c39a, #c2ab7c); color: #221a10; border: none; border-radius: 2px 16px 2px 2px; font-family: 'Nanum Gothic Coding', monospace; box-shadow: 0 30px 80px #000; }
+.theme-horror .panel.inventory h2 { font-family: 'East Sea Dokdo', cursive; font-size: 2.1em; color: #7a0a0a; font-weight: 400; }
+.theme-horror .inv-item { background: #f1ead6; color: #221a10; border-radius: 0; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25); font-family: 'Nanum Pen Script', cursive; font-size: 1.3em; }
+.theme-horror .inv-item.key { background: #ebe1b0; }
+.theme-horror .inventory .muted, .theme-horror .inv-room h3 small, .theme-horror .inv-item small { color: #5a4a30; }
+.theme-horror .inventory button { background: #3a2e1c; color: #eee; border-color: #3a2e1c; }
+.theme-egypt .panel.inventory { background: var(--grit), linear-gradient(90deg, #3b2212 0 14px, #e3cf9c 14px); color: #3a2410; border: 2px solid #6a4020; font-family: 'Gowun Batang', serif; }
+.theme-egypt .panel.inventory h2 { font-family: 'Song Myung', serif; font-weight: 400; font-size: 1.5em; }
+.theme-egypt .inv-item { background: rgba(255, 245, 215, 0.55); color: #3a2410; border-left: 3px solid #8a6420; border-radius: 2px; }
+.theme-egypt .inventory .muted, .theme-egypt .inv-item small { color: #6a4a20; }
+.theme-egypt .inventory button, .theme-egypt .map-panel button { background: linear-gradient(180deg, #f2d27a, #b8891e); color: #2e1a06; border-color: #6e5028; }
+.theme-horror .map-panel { background-color: #071a2c; background-image: linear-gradient(rgba(120, 190, 255, 0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(120, 190, 255, 0.08) 1px, transparent 1px); background-size: 20px 20px; color: #a8d4ff; border: 1px solid #1d4a70; font-family: 'Nanum Gothic Coding', monospace; }
+.theme-horror .map-panel button { background: #0d2a44; border-color: #1d4a70; color: #a8d4ff; }
+.theme-egypt .map-panel { background: var(--grit), radial-gradient(ellipse, #e3cf9c, #c4a86a); color: #3a2410; border: 2px solid #6a4020; font-family: 'Gowun Batang', serif; }
+.theme-egypt .map-panel .legend { color: #4a3418; }
+.result-text { line-height: 1.7; max-width: 46ch; margin: 10px auto; }
+.result-stats { opacity: 0.75; font-size: 0.9em; }
+.theme-horror .result-overlay { background: radial-gradient(ellipse, rgba(40, 0, 0, 0.6), rgba(0, 0, 0, 0.96)); }
+.theme-horror .panel.result { background: transparent; border: none; font-family: 'Nanum Gothic Coding', monospace; color: #c9d2d6; }
+.theme-horror .result h1 { font-family: 'East Sea Dokdo', cursive; font-size: 4.4em; color: #d01818; font-weight: 400; text-shadow: 0 0 20px rgba(200, 0, 0, 0.6); margin: 0; animation: title-flicker 4s infinite; }
+.theme-horror .result-overlay.escaped h1 { color: #e8e2da; }
+.theme-horror .panel.result button.primary { background: #8a0c0c; border-color: #ff3b2b; }
+.theme-egypt .panel.result { position: relative; background: var(--grit), linear-gradient(180deg, #e3cf9c, #c4a86a); color: #3a2410; border: 3px solid #8a6420; font-family: 'Gowun Batang', serif; padding-top: 58px; }
+.theme-egypt .panel.result::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 38px; background: var(--glyphs) repeat-x; background-size: auto 38px; border-bottom: 2px solid #8a6420; }
+.theme-egypt .result h1 { font-family: 'Song Myung', serif; color: #3a200a; font-weight: 400; }
+.theme-egypt .panel.result button.primary { background: linear-gradient(180deg, #f2d27a, #b8891e); color: #2e1a06; border-color: #6e5028; }
+.chat { z-index: 3; }
+.theme-horror .chat { background: rgba(4, 6, 7, 0.72); border: 1px solid #23282a; font-family: 'Nanum Gothic Coding', monospace; border-radius: 3px; }
+.theme-horror .chat-list .sys { color: #ff8b7b; }
+.theme-egypt .chat { background: rgba(30, 18, 6, 0.75); border: 1px solid #6e5028; font-family: 'Gowun Batang', serif; color: #f0dcae; }
+.theme-egypt .chat-list .sys { color: #ffcf6a; }
+
+/* =====================================================================
+   몰입형 테마 — 로비
+   ===================================================================== */
+.lobby-bg .grain { position: absolute; inset: -120px; background-image: var(--noise); opacity: 0.08; animation: grain-shift 0.7s steps(3) infinite; }
+.lobby-inner { position: relative; z-index: 1; }
+
+/* 공포 */
+.lobby2.decor-server { font-family: 'Nanum Gothic Coding', ui-monospace, monospace; }
+.decor-server .lobby-bg { background: radial-gradient(ellipse at 50% 0%, #2a0505 0%, #070303 45%, #020202 100%); }
+.decor-server .glow-a { background: #8a0000; opacity: 0.32; }
+.decor-server .glow-b { background: #002a10; }
+.decor-server .grain { opacity: 0.17; }
+.decor-server .particles span { background: #b9c0c4; box-shadow: none; }
+.blood-drips { position: fixed; top: 0; left: 0; width: 100%; height: 90px; z-index: 0; pointer-events: none; fill: #4a0303; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.6)); }
+.decor-server .hero-title {
+  font-family: 'East Sea Dokdo', 'Nanum Brush Script', cursive; font-weight: 400; font-size: clamp(4.2rem, 13vw, 8.4rem); line-height: 1;
+  background: none; -webkit-background-clip: initial; background-clip: initial; color: #e9e1d8; -webkit-text-fill-color: #e9e1d8; filter: none;
+  text-shadow: 0 0 24px rgba(200, 0, 0, 0.55), 3px 0 rgba(160, 0, 0, 0.75), -2px 0 rgba(0, 120, 255, 0.25); animation: title-flicker 6s infinite;
+}
+.decor-server .hero-badge { color: #ff4a3a; border-color: #7a1010; background: rgba(80, 0, 0, 0.35); font-size: 0.8em; letter-spacing: 0.06em; animation: badge-blink 2.4s steps(1) infinite; }
+.decor-server .hero-sub { color: #aab3b7; }
+.sys-log { max-width: 520px; margin: 0 auto 22px; text-align: left; font-size: 0.82em; color: #5dff8f; background: rgba(0, 10, 4, 0.6); border: 1px solid #11331d; padding: 10px 14px; font-family: 'Nanum Gothic Coding', monospace; text-shadow: 0 0 6px rgba(80, 255, 140, 0.4); }
+.sys-log div { opacity: 0; animation: line-in 0.1s forwards; }
+.sys-log div:last-child { color: #ff5b4b; text-shadow: 0 0 6px rgba(255, 60, 40, 0.6); }
+.decor-server .feature { background: rgba(10, 12, 13, 0.78); border-color: #23292c; border-radius: 3px; }
+.decor-server .feature:hover { border-color: #7a1010; }
+.decor-server .feature b { color: #e6e0d8; }
+.decor-server .glass { background: rgba(8, 10, 11, 0.88); border: 1px solid #23292c; border-radius: 4px; box-shadow: 0 0 0 1px #000, 0 20px 60px #000; }
+.decor-server .step { background: #a01010; color: #fff; border-radius: 2px; }
+.decor-server .segmented button { border-radius: 3px; }
+.decor-server .segmented button.on { background: #a01010; border-color: #ff3b2b; color: #fff; }
+.decor-server .segmented button.on small { color: #ffd0c8; }
+.decor-server .time-range { accent-color: #c01818; }
+.decor-server .start-btn, .decor-server .start-btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, #8a0c0c, #4e0505); color: #ffe9e4; font-family: 'East Sea Dokdo', cursive; font-size: 2.1em; font-weight: 400;
+  letter-spacing: 0.12em; border: 1px solid #ff3b2b; border-radius: 3px; box-shadow: 0 0 30px rgba(200, 0, 0, 0.45); animation: heartbeat 1.6s ease-in-out infinite;
+}
+@keyframes heartbeat { 0%, 100% { transform: scale(1); } 10% { transform: scale(1.025); } 20% { transform: scale(1); } 30% { transform: scale(1.015); } }
+.decor-server .route2 { border-color: #3a1010; background: rgba(20, 0, 0, 0.35); }
+.decor-server .node { border-color: #a01010; color: #ff5b4b; background: #0c0c0c; border-radius: 2px; }
+.decor-server .route2 li.final .node { background: #a01010; color: #fff; box-shadow: 0 0 14px #ff2a2a; }
+.decor-server .route2 li:not(:last-child)::after { background: linear-gradient(#a01010, #300); }
+.decor-server .howto li { border-left-color: #a01010; }
+.decor-server .code-input { background: #050505; color: #ff5b4b; border-color: #3a1010; text-shadow: 0 0 8px rgba(255, 60, 40, 0.6); }
+
+/* 이집트 */
+.lobby2.decor-pillar { font-family: 'Gowun Batang', serif; }
+.decor-pillar .lobby-bg { background: radial-gradient(ellipse at 50% 30%, #4a2c10 0%, #1e1206 55%, #0c0703 100%); }
+.decor-pillar .glow-a { background: #ff9a3a; opacity: 0.22; }
+.decor-pillar .glow-b { background: #c9971f; }
+.glyph-band.top { position: fixed; left: 0; right: 0; top: 0; height: 44px; background: var(--glyphs) repeat-x; background-size: auto 44px; z-index: 0; border-bottom: 3px solid #6e5028; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6); }
+.torch-glow { position: fixed; top: 18%; width: 360px; height: 360px; border-radius: 50%; background: radial-gradient(circle, rgba(255, 150, 50, 0.38), transparent 65%); z-index: 0; pointer-events: none; animation: torch 0.18s infinite alternate; }
+.torch-glow.left { left: -130px; }
+.torch-glow.right { right: -130px; animation-delay: 0.07s; }
+@keyframes torch { from { opacity: 0.75; transform: scale(1); } to { opacity: 1; transform: scale(1.05); } }
+.decor-pillar .lobby-inner { padding-top: 78px; }
+.decor-pillar .hero-title {
+  font-family: 'Song Myung', 'Cinzel', serif; font-weight: 400; letter-spacing: 0.04em;
+  background: linear-gradient(180deg, #fff3c4 0%, #f2c95a 45%, #a8761a 55%, #ffe08a 100%); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent;
+  animation: none; filter: drop-shadow(0 3px 0 #4a2c08) drop-shadow(0 0 22px rgba(255, 180, 60, 0.45));
+}
+.decor-pillar .hero-badge { font-family: 'Song Myung', serif; color: #ffd77a; border-color: #a07b2c; background: rgba(80, 50, 15, 0.5); }
+.decor-pillar .hero-sub { color: #e9d5a8; }
+.decor-pillar .feature { background: var(--grit), linear-gradient(180deg, rgba(227, 207, 156, 0.96), rgba(196, 168, 106, 0.96)); color: #3a2410; border: 1px solid #6e5028; border-radius: 2px; }
+.decor-pillar .feature small { color: #5a3e1c; }
+.decor-pillar .feature b { font-family: 'Song Myung', serif; font-weight: 400; font-size: 1.1em; }
+.decor-pillar .glass { background: linear-gradient(180deg, rgba(40, 24, 8, 0.93), rgba(25, 14, 4, 0.93)); border: 1px solid #a07b2c; border-radius: 3px; box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.35), 0 20px 60px #000; color: #f0dcae; }
+.decor-pillar .glass h2 { font-family: 'Song Myung', serif; font-weight: 400; color: #ffd77a; }
+.decor-pillar .step { background: linear-gradient(180deg, #f2d27a, #b8891e); color: #2e1a06; }
+.decor-pillar .segmented button { background: rgba(255, 220, 140, 0.06); border-color: #6e5028; color: #f0dcae; border-radius: 3px; }
+.decor-pillar .segmented button.on { background: linear-gradient(180deg, #f2d27a, #b8891e); color: #2e1a06; border-color: #ffd77a; }
+.decor-pillar .time-range { accent-color: #c9971f; }
+.decor-pillar .start-btn, .decor-pillar .start-btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, #f6dc8a, #c9971f 55%, #9a6e12); color: #2e1a06; font-family: 'Song Myung', serif; font-size: 1.4em; font-weight: 400;
+  letter-spacing: 0.22em; border: 1px solid #6e5028; border-radius: 3px; box-shadow: 0 0 0 3px #3a2a08, 0 0 40px rgba(255, 190, 70, 0.4);
+}
+.decor-pillar .route2 { background: rgba(227, 207, 156, 0.08); border-color: #6e5028; }
+.decor-pillar .node { border-color: #c9971f; color: #ffd77a; background: #2a1a08; }
+.decor-pillar .route2 li.final .node { background: #c9971f; color: #2e1a06; box-shadow: 0 0 14px rgba(255, 200, 90, 0.7); }
+.decor-pillar .route2 li:not(:last-child)::after { background: linear-gradient(#c9971f, #3a2a08); }
+.decor-pillar .code-input { background: #1a1006; color: #ffd77a; border-color: #6e5028; font-family: 'Cinzel', serif; }
+.decor-pillar .howto li { border-left-color: #c9971f; }
+.decor-pillar .name-row input, .decor-pillar .join-btn, .decor-pillar .icon-btn { border-color: #6e5028; background: rgba(0, 0, 0, 0.3); color: #f0dcae; }
+
+/* 테마 카드: 각 카드는 자기 테마 모습 */
+.tcard-server, .tcard-server:hover:not(:disabled) { background: var(--grit), linear-gradient(160deg, #161414, #0a0808); border-color: #3a1010; font-family: 'Nanum Gothic Coding', monospace; overflow: hidden; }
+.tcard-server::after { content: 'CLASSIFIED'; position: absolute; right: -30px; bottom: 16px; transform: rotate(-16deg); border: 2px solid rgba(200, 20, 20, 0.7); color: rgba(200, 20, 20, 0.75); padding: 2px 32px; font-weight: 800; letter-spacing: 0.2em; font-size: 0.72em; pointer-events: none; }
+.tcard-server .tcard-body strong { color: #ff4a3a; font-family: 'East Sea Dokdo', cursive; font-size: 1.7em; font-weight: 400; line-height: 1; }
+.tcard-server.active { border-color: #ff3b2b; box-shadow: 0 0 0 1px #ff3b2b, 0 10px 40px rgba(200, 0, 0, 0.35); }
+.tcard-server .tcard-check { background: #ff3b2b; color: #fff; }
+.tcard-pillar, .tcard-pillar:hover:not(:disabled) { background: var(--grit), linear-gradient(160deg, #e6d3a2, #b8955a); border-color: #6e5028; color: #3a2410; font-family: 'Gowun Batang', serif; }
+.tcard-pillar .tcard-body strong { color: #4a2a08; font-family: 'Song Myung', serif; font-weight: 400; font-size: 1.15em; }
+.tcard-pillar .tcard-desc, .tcard-pillar .tcard-stats { color: #4a3418; }
+.tcard-pillar .tags i { background: rgba(60, 35, 10, 0.15); color: #4a2a08; }
+.tcard-pillar.active { border-color: #ffd77a; box-shadow: 0 0 0 1px #ffd77a, 0 10px 40px rgba(255, 190, 70, 0.35); }
+.tcard-pillar .tcard-check { background: #4a2a08; color: #ffd77a; }
+.tcard-pillar .tcard-icon { filter: drop-shadow(0 0 8px rgba(255, 200, 90, 0.6)); }
+
+/* 스태미나 (달리기) */
+.stamina { margin-top: 7px; height: 4px; width: 100%; background: rgba(255, 255, 255, 0.12); border-radius: 2px; overflow: hidden; }
+.stamina i { display: block; height: 100%; background: #d8dde0; transition: width 0.15s linear; }
+.stamina.ex i { background: #ff3b2b; animation: badge-blink 0.6s steps(1) infinite; }
+.theme-egypt .stamina i { background: #ffd77a; }
+.hud button.off { opacity: 0.45; text-decoration: line-through; }

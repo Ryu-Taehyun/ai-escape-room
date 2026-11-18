@@ -84,6 +84,24 @@ npm run dev
 
 ---
 
+### 몰입형 연출
+| | 공포 (감염된 데이터센터) | 이집트 (파라오의 피라미드) |
+|---|---|---|
+| 조명 | 손전등(그림자), 깜빡이는 형광등, 붉은 비상등 | 손에 든 횃불, 벽 횃불, 천장 틈 빛줄기 |
+| 공간 | 얼룩진 콘크리트, 녹슨 철문, 핏자국·벽 낙서, 서버 랙, 늘어진 케이블 | 상형문자 사암 벽, 돌문, 석상·관·카노푸스 항아리, 모래 더미 |
+| 이벤트 | 정전 → 어둠 속 형체가 나타났다 사라짐 | 지진 → 화면 흔들림, 천장에서 모래 낙하 |
+| 사운드 | 저주파 드론, 형광등 소음, 멀리서 쿵·속삭임, 발소리, 심장 박동(5분 미만) | 바람, 횃불 타닥임, 돌 갈리는 소리, 발소리 |
+| 창 | CRT 터미널, 찢어진 메모, 증거물 파일, 제어 패널, 시설 도면 | 신성한 석판, 파피루스, 탐험 일지, 황금 테두리 시험, 도굴꾼 지도 |
+
+- **1인칭 현실감** (`engine.js` 의 `_move`, `_updateBody`): 출발·정지 관성, 속도에 비례한 걸음 흔들림(위아래·좌우·기울기)과 발 디딤 충격,
+  좌우 번갈아 들리는 발소리, 멈춰 있을 때의 숨쉬기, 옆걸음·급회전 시 몸 기울기, 시선을 늦게 따라오는 손전등/횃불,
+  문 열림·정전·지진 때의 충격 흔들림(점점 잦아듦), 달릴 때 넓어지는 시야각과 깜짝 놀랄 때 좁아지는 시야
+- 텍스처와 사운드는 이미지·음원 파일 없이 코드로 생성합니다 (`game/textures.js`, `game/audio.js`).
+- **바로바로 진행**: 단서 조사와 문은 창 없이 처리되어 계속 움직일 수 있고, 암호·미니게임 창은 성공하면 자동으로 닫히며 곧바로 조작으로 돌아갑니다.
+  ESC로 창을 닫은 경우에만 브라우저 보안 정책 때문에 화면을 한 번 클릭해야 할 수 있습니다.
+
+---
+
 ## 3. 게임 규칙 (구현 완료)
 
 | 항목 | 값 | 구현 위치 |
@@ -95,8 +113,8 @@ npm run dev
 | 진행 | 방 클리어 → 다음 방 문 열림 → 최종 방 클리어 시 탈출 | `game_logic.submit_answer` |
 | 정답 판정 | 공백·대소문자 무시, `\|` 로 복수 정답 (`사람\|인간`) | `game_logic.check_answer` |
 | 3D | 1인칭 (WASD, 마우스, Shift, E 조사), 잠긴 문 충돌, 벽 너머 조사 불가 | `engine.js` |
-| 단서 | 조사 시 팀 인벤토리(I)에 공유, 조사 전에는 내용 비공개 | `game_logic.inspect_clue`, `ClueModal.tsx`, `InventoryPanel.tsx` |
-| 미니게임/열쇠 | 서버가 문제 생성·검증(1회용) → 열쇠 → 문에서 사용 | `minigames.py`, `components/minigames/`, `DoorModal.tsx` |
+| 단서 | 조사 시 팀 인벤토리(I)에 공유, 조사 전에는 내용 비공개 | `game_logic.inspect_clue`, `ClueDoc.tsx`, `InventoryPanel.tsx` |
+| 미니게임/열쇠 | 서버가 문제 생성·검증(1회용) → 열쇠 → 문에서 사용 | `minigames.py`, `components/minigames/`, `Game.tsx` (문 상호작용) |
 | 지도 (M) | 방별 클리어 ✅ / 진행 가능 🔓 / 잠김 🔒, 내 위치·팀원 위치, 문 상태, 단서 수·암호·열쇠 상태 | `MiniMap.tsx` |
 | 협동 | WebSocket: 위치 동기화, 채팅, 클리어/힌트/관리자 알림 | `ws_manager.py`, `socket.ts` |
 | 관리자 | 인게임 🛠 버튼 → 컨셉·방·퍼즐·**단서(위치/모양/내용)·미니게임(종류/난이도/열쇠 이름)** 편집, AI 편집, 시간/잠금/초기화, 로그 | `AdminPanel.tsx`, `routers/admin.py` |
@@ -109,6 +127,10 @@ npm run dev
 | 클릭 | 시점 고정 (게임 시작) |
 | WASD / Shift | 이동 / 달리기 |
 | E 또는 클릭 | 조준한 대상 조사 (단서·단말기·미니게임·문) |
+| Shift | 달리기 (스태미나 소모, 바닥나면 숨이 가빠지고 느려짐) |
+| C (누르는 동안) | 웅크리기 — 시점이 낮아지고 발소리가 작아짐 |
+| F | 손전등(공포) / 횃불(이집트) 켜기·끄기 |
+| 🎥 버튼 | 화면 흔들림 줄이기 (멀미 방지, OS '동작 줄이기' 설정을 기본값으로 따름) |
 | I | 팀 인벤토리 |
 | M | 지도 |
 | ESC | 창 닫기 / 커서 해제 |
@@ -139,12 +161,15 @@ ai-escape-room/
 ├── frontend/
 │   ├── .env / .env.example
 │   └── src/
-│       ├── game/engine.js     # Three.js 1인칭 엔진                   [3]
+│       ├── game/engine.js     # Three.js 1인칭 엔진 (테마별 공간·조명·이벤트) [3]
+│       ├── game/textures.js   # 절차적 텍스처 (콘크리트, 사암, 핏자국 ...) [3]
+│       ├── game/audio.js      # Web Audio 합성 배경음·효과음            [3]
+│       ├── game/themeCopy.ts  # 테마별 화면 문구                        [4]
 │       ├── game/engine.d.ts   # 엔진 타입 선언                        [3]
 │       ├── pages/Lobby.tsx    # 테마/방 개수/시간 선택, 방 코드 참가   [3]
 │       ├── pages/Game.tsx     # HUD, 타이머, 소켓, 엔진 연결          [3]
-│       ├── components/        # MiniMap, PuzzleModal, ClueModal, DoorModal,
-│       │                      # InventoryPanel, ChatPanel, AdminPanel [3]
+│       ├── components/        # PuzzleModal, ClueDoc, MiniMap, InventoryPanel,
+│       │                      # ChatPanel, AdminPanel                 [3]
 │       ├── components/minigames/  # Sequence / Wires / Timing 게임    [3]
 │       ├── api/client.ts      # REST 클라이언트                       [3]
 │       ├── api/socket.ts      # WebSocket 클라이언트 (자동 재연결)    [3]

@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { api } from '../api/client';
 import { GameSocket } from '../api/socket';
 import { EscapeEngine } from '../game/engine';
 import type { EngineRoom, InteractTarget } from '../game/engine';
+import { GameAudio, type SfxName } from '../game/audio';
+import { glyphBandDataURL, noiseDataURL } from '../game/textures';
+import { COPY, themeKind } from '../game/themeCopy';
 import MiniMap from '../components/MiniMap';
 import PuzzleModal from '../components/PuzzleModal';
-import ClueModal from '../components/ClueModal';
-import DoorModal from '../components/DoorModal';
+import ClueDoc, { type ClueDocData } from '../components/ClueDoc';
 import InventoryPanel from '../components/InventoryPanel';
 import MiniGameModal from '../components/minigames/MiniGameModal';
 import AdminPanel from '../components/AdminPanel';
@@ -20,14 +22,22 @@ interface Props {
   onExit: () => void;
 }
 
-/** 현재 열려 있는 오버레이 (한 번에 하나) */
-type Modal =
-  | { kind: 'puzzle' | 'minigame' | 'door'; slot: number }
-  | { kind: 'clue'; slot: number; id: string; label: string }
-  | { kind: 'map' | 'inventory' | 'admin' }
-  | null;
+/** 마우스 고정을 풀고 여는 창 (한 번에 하나). 단서·문은 창 없이 바로 처리한다. */
+type Modal = { kind: 'puzzle' | 'minigame'; slot: number } | { kind: 'map' | 'inventory' | 'admin' } | null;
 
+interface Toast {
+  key: number;
+  text: string;
+  tone: 'good' | 'bad' | 'info';
+}
+
+const NOISE = noiseDataURL(180, 0.55);
+const GLYPHS = glyphBandDataURL();
+const GRIT = noiseDataURL(160, 0.1);
+const MUTE_KEY = 'escape-muted';
+const MOTION_KEY = 'escape-motion';
 let msgSeq = 0;
+
 const toEngineRooms = (s: SessionState): EngineRoom[] =>
   s.rooms.map((r) => ({
     slot: r.slot,
@@ -37,15 +47,33 @@ const toEngineRooms = (s: SessionState): EngineRoom[] =>
     has_puzzle: r.has_puzzle,
     puzzle_solved: r.puzzle_solved,
     clues: r.clues.map((c) => ({ id: c.id, label: c.label, object: c.object, pos: c.pos, found: c.found })),
-    minigame: r.minigame ? { title: r.minigame.title, key_obtained: r.minigame.key_obtained, key_used: r.minigame.key_used } : null,
+    minigame: r.minigame ? { type: r.minigame.type, title: r.minigame.title, key_obtained: r.minigame.key_obtained, key_used: r.minigame.key_used } : null,
   }));
 
-/** 현재 방의 진행 상황 한 줄 요약 */
 function objectiveSummary(room: SessionRoom): string {
-  const parts = [`🔎 단서 ${room.clues.filter((c) => c.found).length}/${room.clues.length}`];
-  if (room.has_puzzle) parts.push(room.puzzle_solved ? '🔓 암호 해제' : '🔒 암호');
-  if (room.minigame) parts.push(room.minigame.key_used ? '🔑 사용 완료' : room.minigame.key_obtained ? '🔑 보유' : '🎮 미니게임');
-  return parts.join(' · ');
+  const parts = [`🔎 ${room.clues.filter((c) => c.found).length}/${room.clues.length}`];
+  if (room.has_puzzle) parts.push(room.puzzle_solved ? '🔓 암호' : '🔒 암호');
+  if (room.minigame) parts.push(room.minigame.key_used ? '🔑 사용' : room.minigame.key_obtained ? '🔑 보유' : '🎮 시험');
+  return parts.join('  ');
+}
+
+/** 화면 흔들림 기본값: 운영체제의 '동작 줄이기'를 켰으면 꺼진 상태로 시작 */
+function loadMotion(): boolean {
+  try {
+    const v = localStorage.getItem(MOTION_KEY);
+    if (v !== null) return v === '1';
+  } catch {
+    /* 저장 불가 환경 */
+  }
+  return !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+}
+
+function loadMuted(): boolean {
+  try {
+    return localStorage.getItem(MUTE_KEY) === '1';
+  } catch {
+    return false;
+  }
 }
 
 export default function Game({ sessionId, playerName, onExit }: Props) {
@@ -59,23 +87,53 @@ export default function Game({ sessionId, playerName, onExit }: Props) {
   const [currentSlot, setCurrentSlot] = useState(0);
   const [myPos, setMyPos] = useState<Vec3>([0, 1.6, 2.5]);
   const [pointerLocked, setPointerLocked] = useState(false);
+  const [started, setStarted] = useState(false);
+  const [showResume, setShowResume] = useState(false);
   const [focus, setFocus] = useState<InteractTarget | null>(null);
   const [modal, setModal] = useState<Modal>(null);
+  const [clueDoc, setClueDoc] = useState<ClueDocData | null>(null);
+  const [toast, setToast] = useState<Toast | null>(null);
+  const [scare, setScare] = useState<'' | 'blackout' | 'rumble'>('');
+  const [muted, setMuted] = useState(loadMuted);
+  const [motionOn, setMotionOn] = useState(loadMotion);
+  const [stamina, setStamina] = useState({ v: 1, ex: false });
 
   const containerRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<EscapeEngine | null>(null);
+  const audioRef = useRef<GameAudio | null>(null);
   const socketRef = useRef<GameSocket | null>(null);
   const deadlineRef = useRef(0);
   const posRef = useRef<Vec3>([0, 1.6, 2.5]);
   const expiredFetchRef = useRef(false);
   const statusRef = useRef<SessionState['status']>('playing');
+  const stateRef = useRef<SessionState | null>(null);
+  const modalRef = useRef<Modal>(null);
+  const busyRef = useRef(false);
+  const docTimer = useRef<number>();
+  const toastTimer = useRef<number>();
+  const scareTimer = useRef<number>();
+  modalRef.current = modal;
+  const motionRef = useRef(motionOn);
+  motionRef.current = motionOn;
+
+  const kind = themeKind(state?.theme.style.decor);
+  const copy = COPY[kind];
+
+  const sound = useCallback((name: SfxName) => audioRef.current?.sfx(name), []);
 
   const pushMsg = useCallback((name: string, text: string, system = false) => {
     setMessages((m) => [...m.slice(-80), { id: String(++msgSeq), name, text, system }]);
   }, []);
 
+  const showToast = useCallback((text: string, tone: Toast['tone'] = 'info') => {
+    window.clearTimeout(toastTimer.current);
+    setToast({ key: Date.now(), text, tone });
+    toastTimer.current = window.setTimeout(() => setToast(null), 3400);
+  }, []);
+
   const applyState = useCallback((s: SessionState) => {
     setState(s);
+    stateRef.current = s;
     statusRef.current = s.status;
     deadlineRef.current = Date.now() + s.remaining_seconds * 1000;
     setRemaining(s.remaining_seconds);
@@ -94,10 +152,10 @@ export default function Game({ sessionId, playerName, onExit }: Props) {
     refresh();
   }, [refresh]);
 
-  // ---- 타이머 (서버 remaining 기준 로컬 카운트다운) ----
+  // ---- 타이머 ----
   useEffect(() => {
     const id = window.setInterval(() => {
-      if (statusRef.current !== 'playing') return; // 종료되면 타이머 정지
+      if (statusRef.current !== 'playing') return;
       const rem = Math.max(0, Math.round((deadlineRef.current - Date.now()) / 1000));
       setRemaining(rem);
       if (rem === 0 && !expiredFetchRef.current) {
@@ -144,13 +202,118 @@ export default function Game({ sessionId, playerName, onExit }: Props) {
     };
   }, [sessionId, playerName, refresh, pushMsg]);
 
-  // ---- 3D 엔진: 테마 스타일 / 방 구성(이름·단서·미니게임)이 바뀌면 재생성 (관리자 편집 반영) ----
+  // ---- 사운드 (테마별) ----
+  useEffect(() => {
+    if (!state) return;
+    const a = new GameAudio(kind);
+    a.setMuted(muted);
+    audioRef.current = a;
+    return () => {
+      a.dispose();
+      if (audioRef.current === a) audioRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, !!state]);
+
+  useEffect(() => {
+    audioRef.current?.setMuted(muted);
+    try {
+      localStorage.setItem(MUTE_KEY, muted ? '1' : '0');
+    } catch {
+      /* 저장 불가 환경 */
+    }
+  }, [muted]);
+
+  useEffect(() => {
+    const t = state?.status === 'playing' && remaining > 0 && remaining < 300 ? 1 - remaining / 300 : 0;
+    audioRef.current?.setTension(t);
+  }, [remaining, state?.status]);
+
+  // ---- 상호작용: 단서·문은 창 없이 즉시 처리 ----
+  const inspect = useCallback(
+    async (t: InteractTarget) => {
+      if (busyRef.current) return;
+      busyRef.current = true;
+      try {
+        const r = await api.inspectClue(sessionId, t.slot, t.id!, playerName);
+        applyState(r.state);
+        sound('clue');
+        window.clearTimeout(docTimer.current);
+        setClueDoc({ key: `${t.slot}:${t.id}:${Date.now()}`, label: r.clue.label, text: r.clue.text, object: r.clue.object, isNew: r.new });
+        docTimer.current = window.setTimeout(() => setClueDoc(null), Math.max(6000, r.clue.text.length * 110));
+      } catch (e) {
+        showToast((e as Error).message, 'bad');
+      } finally {
+        busyRef.current = false;
+      }
+    },
+    [sessionId, playerName, applyState, sound, showToast],
+  );
+
+  const tryDoor = useCallback(
+    async (slot: number) => {
+      const room = stateRef.current?.rooms[slot];
+      if (!room || room.status === 'cleared' || busyRef.current) return;
+      const mg = room.minigame;
+      if (mg && mg.key_obtained && !mg.key_used) {
+        busyRef.current = true;
+        try {
+          const r = await api.useKey(sessionId, slot, playerName);
+          applyState(r.state);
+          sound('key');
+          showToast(r.message, 'good');
+        } catch (e) {
+          showToast((e as Error).message, 'bad');
+        } finally {
+          busyRef.current = false;
+        }
+        return;
+      }
+      const missing: string[] = [];
+      if (room.has_puzzle && !room.puzzle_solved) missing.push(copy.needPuzzle);
+      if (mg && !mg.key_obtained) missing.push(`🔑 ${mg.reward}`);
+      sound('locked');
+      showToast(missing.length ? `${copy.doorLocked} — 필요한 것: ${missing.join(', ')}` : copy.doorLocked, 'bad');
+    },
+    [sessionId, playerName, applyState, sound, showToast, copy],
+  );
+
+  const openModal = useCallback(
+    (m: Modal) => {
+      setClueDoc(null);
+      engineRef.current?.unlockPointer();
+      if (m && (m.kind === 'puzzle' || m.kind === 'minigame')) sound('open');
+      setModal(m);
+    },
+    [sound],
+  );
+
+  /** 창을 닫고 곧바로 조작으로 복귀 (사용자 입력 직후라 마우스 재고정이 허용됨) */
+  const closeAndResume = useCallback(() => {
+    setModal(null);
+    const eng = engineRef.current;
+    if (!eng || statusRef.current !== 'playing') return;
+    eng.setInputEnabled(true);
+    eng.lock().then((ok) => {
+      if (!ok) setShowResume(true);
+    });
+  }, []);
+
+  const handlersRef = useRef({ onInteract: (_t: InteractTarget) => {} });
+  handlersRef.current.onInteract = (t: InteractTarget) => {
+    if (statusRef.current !== 'playing') return;
+    if (t.kind === 'clue') inspect(t);
+    else if (t.kind === 'door') tryDoor(t.slot);
+    else openModal({ kind: t.kind, slot: t.slot });
+  };
+
+  // ---- 3D 엔진 ----
   const worldKey = useMemo(
     () =>
       state
         ? JSON.stringify([
             state.theme.style,
-            state.rooms.map((r) => [r.name, r.has_puzzle, !!r.minigame, r.clues.map((c) => [c.id, c.label, c.object, c.pos])]),
+            state.rooms.map((r) => [r.name, r.has_puzzle, r.minigame?.type ?? null, r.clues.map((c) => [c.id, c.label, c.object, c.pos])]),
           ])
         : '',
     [state],
@@ -162,13 +325,25 @@ export default function Game({ sessionId, playerName, onExit }: Props) {
       rooms: toEngineRooms(state),
       style: state.theme.style,
       startPosition: posRef.current,
-      onInteract: (t) => {
-        if (t.kind === 'clue') setModal({ kind: 'clue', slot: t.slot, id: t.id!, label: t.label });
-        else setModal({ kind: t.kind, slot: t.slot });
-      },
+      audio: audioRef.current,
+      motion: motionRef.current ? 1 : 0.2,
+      onStamina: (v, ex) => setStamina({ v, ex }),
+      onInteract: (t) => handlersRef.current.onInteract(t),
       onRoomChange: (slot) => setCurrentSlot(slot),
-      onLockChange: setPointerLocked,
+      onLockChange: (locked) => {
+        setPointerLocked(locked);
+        if (locked) {
+          setStarted(true);
+          setShowResume(false);
+          audioRef.current?.start();
+        }
+      },
       onFocusChange: setFocus,
+      onScare: (k) => {
+        window.clearTimeout(scareTimer.current);
+        setScare(k);
+        scareTimer.current = window.setTimeout(() => setScare(''), 1800);
+      },
       onMove: ({ position, rotation, slot }) => {
         posRef.current = position;
         setMyPos(position);
@@ -187,38 +362,62 @@ export default function Game({ sessionId, playerName, onExit }: Props) {
     if (state) engineRef.current?.setRooms(toEngineRooms(state));
   }, [state]);
 
+  useEffect(() => {
+    engineRef.current?.setMotion(motionOn ? 1 : 0.2);
+    try {
+      localStorage.setItem(MOTION_KEY, motionOn ? '1' : '0');
+    } catch {
+      /* 저장 불가 환경 */
+    }
+  }, [motionOn, worldKey]);
+
   const others = useMemo(() => Object.values(players).filter((p) => p.id !== myId), [players, myId]);
   useEffect(() => {
     engineRef.current?.updateRemotePlayers(others);
   }, [others, worldKey]);
 
-  // ---- 오버레이가 열려 있으면 3D 입력 차단 ----
   const ended = state ? state.status !== 'playing' : false;
   const inputBlocked = modal !== null || ended;
   useEffect(() => {
     engineRef.current?.setInputEnabled(!inputBlocked);
   }, [inputBlocked, worldKey]);
 
-  const open = useCallback((m: Modal) => {
-    engineRef.current?.unlockPointer();
-    setModal(m);
-  }, []);
-  const close = useCallback(() => setModal(null), []);
-  const modalRef = useRef<Modal>(null);
-  modalRef.current = modal;
+  // 마우스 고정이 풀린 채 잠시 지나면(ESC 등) 작은 안내만 표시
+  useEffect(() => {
+    if (!started || pointerLocked || modal || ended) {
+      setShowResume(false);
+      return;
+    }
+    const id = window.setTimeout(() => setShowResume(true), 500);
+    return () => window.clearTimeout(id);
+  }, [started, pointerLocked, modal, ended]);
 
   // ---- 단축키 ----
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement;
-      if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT') return;
-      if (e.code === 'KeyM') open(modalRef.current?.kind === 'map' ? null : { kind: 'map' });
-      if (e.code === 'KeyI') open(modalRef.current?.kind === 'inventory' ? null : { kind: 'inventory' });
-      if (e.code === 'Escape' && modalRef.current?.kind !== 'admin' && modalRef.current?.kind !== 'minigame') setModal(null);
+      const tg = e.target as HTMLElement;
+      if (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA' || tg.tagName === 'SELECT') return;
+      const cur = modalRef.current;
+      if (e.code === 'KeyM' || e.code === 'KeyI') {
+        const k = e.code === 'KeyM' ? 'map' : 'inventory';
+        if (cur?.kind === k) closeAndResume();
+        else if (!cur || cur.kind === 'map' || cur.kind === 'inventory') openModal({ kind: k });
+      }
+      if (e.code === 'Escape' && cur && cur.kind !== 'admin' && cur.kind !== 'minigame') closeAndResume();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open]);
+  }, [openModal, closeAndResume]);
+
+  useEffect(
+    () => () => {
+      window.clearTimeout(docTimer.current);
+      window.clearTimeout(toastTimer.current);
+      window.clearTimeout(scareTimer.current);
+    },
+    [],
+  );
+
   if (error && !state) {
     return (
       <div className="center">
@@ -234,91 +433,157 @@ export default function Game({ sessionId, playerName, onExit }: Props) {
   const modalRoom = modal && 'slot' in modal ? state.rooms[modal.slot] : null;
   const keyCount = state.inventory.filter((i) => i.kind === 'key' && !i.used).length;
   const clueCount = state.inventory.filter((i) => i.kind === 'clue').length;
-
-  const FOCUS_VERB = { puzzle: '암호 입력', clue: '조사하기', minigame: '도전하기', door: '살펴보기' } as const;
+  const lowTime = state.status === 'playing' && remaining < 300;
 
   return (
-    <div className="game">
+    <div className={`game theme-${kind} ${scare ? `fx-${scare}` : ''} ${lowTime ? 'fx-low' : ''}`} style={{ '--noise': `url(${NOISE})`, '--grit': `url(${GRIT})`, '--glyphs': `url(${GLYPHS})` } as CSSProperties}>
       <div ref={containerRef} className="canvas-wrap" />
-      {pointerLocked && <div className="crosshair">+</div>}
+      <div className="fx-layer" aria-hidden>
+        <div className="fx-grain" />
+        <div className="fx-vignette" />
+        <div className="fx-flash" />
+      </div>
+
+      {pointerLocked && <div className={`crosshair ${focus ? 'on' : ''}`} />}
       {pointerLocked && focus && (
         <div className="focus-tip">
-          [E] {FOCUS_VERB[focus.kind]} — {focus.label}
+          <kbd>E</kbd> {copy.focusVerb[focus.kind]} <span>· {focus.label}</span>
         </div>
       )}
 
       {/* HUD */}
       <div className="hud top-left">
-        <div className={`timer ${remaining < 300 ? 'warn' : ''}`}>⏱ {formatTime(remaining)}</div>
-        <div>{state.theme.name}</div>
-        <div>
-          현재: {currentSlot + 1}. {room?.name} {room?.status === 'cleared' ? '✅' : ''}
+        <div className="timer-label">{copy.timerLabel}</div>
+        <div className={`timer ${lowTime ? 'warn' : ''}`}>{formatTime(remaining)}</div>
+        <div className="hud-room">
+          {currentSlot + 1}. {room?.name} {room?.status === 'cleared' ? '✓' : ''}
         </div>
         {room && room.status !== 'locked' && <div className="objective">{objectiveSummary(room)}</div>}
-        <div>
-          진행: {cleared}/{state.room_count} · 힌트 {state.hints_used}회
+        <div className="hud-progress">
+          {state.rooms.map((r) => (
+            <i key={r.slot} className={r.status} title={r.name} />
+          ))}
         </div>
+        {stamina.v < 0.995 && (
+          <div className={`stamina ${stamina.ex ? 'ex' : ''}`} title="스태미나">
+            <i style={{ width: `${stamina.v * 100}%` }} />
+          </div>
+        )}
       </div>
       <div className="hud top-right">
         <div className="code">
-          방 코드 <b>{state.id}</b> · {connected ? `🟢 ${Object.keys(players).length}명` : '🔴 연결 끊김'}
+          방 코드 <b>{state.id}</b> · {connected ? `${Object.keys(players).length}명 접속` : '연결 끊김'}
         </div>
         <div className="row">
-          <button onClick={() => open({ kind: 'inventory' })}>
-            🎒 인벤토리 (I) {clueCount + keyCount > 0 && <span className="badge">{clueCount}{keyCount > 0 ? ` · 🔑${keyCount}` : ''}</span>}
+          <button onClick={() => openModal({ kind: 'inventory' })}>
+            {kind === 'egypt' ? '📜' : '🗂'} <kbd>I</kbd>
+            {clueCount + keyCount > 0 && (
+              <span className="badge">
+                {clueCount}
+                {keyCount > 0 ? ` · 🔑${keyCount}` : ''}
+              </span>
+            )}
           </button>
-          <button onClick={() => open({ kind: 'map' })}>🗺 지도 (M)</button>
-          <button onClick={() => open({ kind: 'admin' })}>🛠 관리자</button>
+          <button onClick={() => openModal({ kind: 'map' })}>
+            🗺 <kbd>M</kbd>
+          </button>
+          <button onClick={() => setMuted((m) => !m)} title={muted ? '소리 켜기' : '소리 끄기'}>
+            {muted ? '🔇' : '🔊'}
+          </button>
+          <button
+            className={motionOn ? '' : 'off'}
+            onClick={() => setMotionOn((v) => !v)}
+            title={motionOn ? '화면 흔들림 줄이기 (멀미 방지)' : '화면 흔들림 켜기'}
+          >
+            🎥
+          </button>
+          <button onClick={() => openModal({ kind: 'admin' })} title="관리자">
+            🛠
+          </button>
           <button onClick={onExit}>나가기</button>
         </div>
       </div>
 
-      {!pointerLocked && !inputBlocked && (
-        <div className="click-to-play">
-          <h2>클릭하여 시작</h2>
-          <p>WASD 이동 · Shift 달리기 · 마우스 시점 · E/클릭 조사 · I 인벤토리 · M 지도 · ESC 커서 해제</p>
-          <p className="muted">✨ 반짝이는 물건을 조사해 단서를 모으고, 🎮 미니게임으로 열쇠를 얻어 🚪 문을 여세요.</p>
+      {/* 첫 입장 (브라우저 정책상 첫 클릭은 꼭 필요) */}
+      {!started && !ended && !modal && (
+        <div
+          className="intro"
+          onClick={() => {
+            audioRef.current?.start();
+            engineRef.current?.lock();
+          }}
+        >
+          <div className="intro-card">
+            <div className="intro-eyebrow">{copy.introEyebrow}</div>
+            <h1 className="intro-title">{copy.introTitle}</h1>
+            {copy.introLines.map((l, i) => (
+              <p key={i} className="intro-line" style={{ animationDelay: `${0.4 + i * 0.9}s` }}>
+                {l}
+              </p>
+            ))}
+            <div className="intro-action">{copy.introAction}</div>
+            <div className="intro-controls">{copy.controls}</div>
+          </div>
+        </div>
+      )}
+      {showResume && <div className="resume-hint">{copy.resumeHint}</div>}
+      {scare && copy.scareText && <div className="scare-text">{copy.scareText}</div>}
+
+      {clueDoc && <ClueDoc doc={clueDoc} kind={kind} copy={copy} />}
+      {toast && (
+        <div key={toast.key} className={`toast toast-${toast.tone}`}>
+          {toast.text}
         </div>
       )}
 
       <ChatPanel messages={messages} connected={connected} onSend={(text) => socketRef.current?.send({ type: 'chat', text })} />
 
       {modal?.kind === 'map' && (
-        <MiniMap rooms={state.rooms} currentSlot={currentSlot} myPos={myPos} myName={playerName} players={others} onClose={close} />
+        <MiniMap rooms={state.rooms} currentSlot={currentSlot} myPos={myPos} myName={playerName} players={others} title={copy.mapTitle} onClose={closeAndResume} />
       )}
-      {modal?.kind === 'inventory' && <InventoryPanel state={state} onClose={close} />}
+      {modal?.kind === 'inventory' && <InventoryPanel state={state} title={copy.inventoryTitle} empty={copy.inventoryEmpty} onClose={closeAndResume} />}
       {modal?.kind === 'puzzle' && modalRoom && (
-        <PuzzleModal key={modalRoom.slot} sessionId={sessionId} room={modalRoom} playerName={playerName} disabled={ended} onClose={close} onState={applyState} />
-      )}
-      {modal?.kind === 'clue' && (
-        <ClueModal
-          key={`${modal.slot}:${modal.id}`}
+        <PuzzleModal
+          key={modalRoom.slot}
           sessionId={sessionId}
-          slot={modal.slot}
-          clueId={modal.id}
-          label={modal.label}
+          room={modalRoom}
           playerName={playerName}
-          onClose={close}
+          disabled={ended}
+          kind={kind}
+          copy={copy}
+          onClose={closeAndResume}
+          onSolved={closeAndResume}
           onState={applyState}
+          onSound={sound}
         />
       )}
       {modal?.kind === 'minigame' && modalRoom?.minigame && (
-        <MiniGameModal key={modalRoom.slot} sessionId={sessionId} room={modalRoom} playerName={playerName} disabled={ended} onClose={close} onState={applyState} />
+        <MiniGameModal
+          key={modalRoom.slot}
+          sessionId={sessionId}
+          room={modalRoom}
+          playerName={playerName}
+          disabled={ended}
+          kind={kind}
+          copy={copy}
+          onClose={closeAndResume}
+          onDone={closeAndResume}
+          onState={applyState}
+          onSound={sound}
+        />
       )}
-      {modal?.kind === 'door' && modalRoom && (
-        <DoorModal key={modalRoom.slot} sessionId={sessionId} room={modalRoom} playerName={playerName} disabled={ended} onClose={close} onState={applyState} />
-      )}
-      {modal?.kind === 'admin' && <AdminPanel session={state} onClose={close} />}
+      {modal?.kind === 'admin' && <AdminPanel session={state} onClose={closeAndResume} />}
 
       {ended && modal?.kind !== 'admin' && (
-        <div className="overlay">
+        <div className={`overlay result-overlay ${state.status}`}>
           <div className="panel result">
-            <h1>{state.status === 'escaped' ? '🎉 탈출 성공!' : '💀 시간 초과'}</h1>
-            <p>
+            <h1>{state.status === 'escaped' ? copy.escapedTitle : copy.failedTitle}</h1>
+            {(state.status === 'escaped' ? copy.escapedText : copy.failedText) && <p className="result-text">{state.status === 'escaped' ? copy.escapedText : copy.failedText}</p>}
+            <p className="result-stats">
               클리어 {cleared}/{state.room_count} · 단서 {clueCount}개 · 힌트 {state.hints_used}회 · 남은 시간 {formatTime(remaining)}
             </p>
             <button className="primary" onClick={onExit}>
-              로비로
+              {copy.toLobby}
             </button>
           </div>
         </div>
