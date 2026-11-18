@@ -1,5 +1,6 @@
 // engine.js 의 타입 선언 (React/TS 코드에서 사용)
-import type { RoomStatus, ThemeStyle, Vec3 } from '../types';
+import type { MinigameType, RoomStatus, ThemeStyle, Vec3 } from '../types';
+import type { GameAudio } from './audio';
 
 export interface EngineClue {
   id: string;
@@ -17,7 +18,7 @@ export interface EngineRoom {
   has_puzzle: boolean;
   puzzle_solved: boolean;
   clues: EngineClue[];
-  minigame: { title: string; key_obtained: boolean; key_used: boolean } | null;
+  minigame: { type: MinigameType; title: string; key_obtained: boolean; key_used: boolean } | null;
 }
 
 export type InteractKind = 'puzzle' | 'clue' | 'minigame' | 'door';
@@ -25,7 +26,7 @@ export type InteractKind = 'puzzle' | 'clue' | 'minigame' | 'door';
 export interface InteractTarget {
   kind: InteractKind;
   slot: number;
-  id?: string;   // clue id
+  id?: string; // clue id
   label: string;
 }
 
@@ -46,11 +47,14 @@ export interface EngineOptions {
   rooms: EngineRoom[];
   style: ThemeStyle;
   startPosition?: Vec3;
+  audio?: GameAudio | null;
   onInteract?: (target: InteractTarget) => void;
   onRoomChange?: (slot: number) => void;
   onMove?: (e: MoveEvent) => void;
   onLockChange?: (locked: boolean) => void;
   onFocusChange?: (target: InteractTarget | null) => void;
+  /** 공포: 정전(blackout), 이집트: 지진(rumble) */
+  onScare?: (kind: 'blackout' | 'rumble') => void;
 }
 
 export declare const ROOM_SIZE: number;
@@ -62,6 +66,8 @@ export declare class EscapeEngine {
   setRooms(rooms: EngineRoom[]): void;
   setInputEnabled(enabled: boolean): void;
   unlockPointer(): void;
+  /** 포인터 락 재요청 (사용자 입력 직후에만 성공) */
+  lock(): Promise<boolean>;
   updateRemotePlayers(players: RemotePlayerInput[]): void;
   dispose(): void;
 }
