@@ -24,10 +24,19 @@ def get_config():
 
 @router.get("/themes", response_model=list[ThemeSummary])
 def list_themes():
-    return [
-        {**t, "room_names": [r["name"] for r in repo.list_rooms(t["id"])]}
-        for t in repo.list_themes()
-    ]
+    result = []
+    for t in repo.list_themes():
+        rooms = repo.list_rooms(t["id"])
+        result.append({
+            **t,
+            "room_names": [r["name"] for r in rooms],
+            "rooms": [
+                {"name": r["name"], "has_puzzle": game_logic.has_puzzle(r), "clue_count": len(r.get("clues", [])),
+                 "minigame": (r.get("minigame") or {}).get("type")}
+                for r in rooms
+            ],
+        })
+    return result
 
 
 @router.post("/sessions", response_model=SessionState)

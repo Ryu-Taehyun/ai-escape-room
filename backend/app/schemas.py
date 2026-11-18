@@ -41,6 +41,14 @@ class MinigameConfig(BaseModel):
 
 
 # ---------- 공개(플레이어용) ----------
+class RoomBrief(BaseModel):
+    """로비 미리보기용 방 요약 (정답·단서 내용 없음)"""
+    name: str
+    has_puzzle: bool
+    clue_count: int
+    minigame: Optional[str] = None   # 미니게임 type
+
+
 class ThemeSummary(BaseModel):
     id: int
     key: str
@@ -48,6 +56,7 @@ class ThemeSummary(BaseModel):
     description: str
     style: ThemeStyle
     room_names: list[str]
+    rooms: list[RoomBrief] = []
 
 
 class GameConfig(BaseModel):
