@@ -33,15 +33,6 @@ def get_theme_by_key(key: str) -> Optional[dict]:
         return _theme_row(row) if row else None
 
 
-def create_theme(key: str, name: str, description: str, style: dict) -> int:
-    with get_conn() as c:
-        cur = c.execute(
-            "INSERT INTO themes (key, name, description, style_json, updated_at) VALUES (?, ?, ?, ?, ?)",
-            (key, name, description, json.dumps(style), now_iso()),
-        )
-        return cur.lastrowid
-
-
 def update_theme(theme_id: int, fields: dict) -> None:
     if "style" in fields:
         fields["style_json"] = json.dumps(fields.pop("style"))
@@ -84,21 +75,38 @@ def get_room(room_id: int) -> Optional[dict]:
         return _room_row(row) if row else None
 
 
-def insert_room(theme_id: int, order_idx: int, data: dict, source: str) -> int:
+def create_theme_with_rooms(key: str, name: str, description: str, style: dict, rooms: list[tuple[dict, str]]) -> int:
+    """테마와 방들을 한 트랜잭션으로 저장 (중간에 실패하면 테마도 남지 않는다). rooms: [(방 내용, source)]"""
     with get_conn() as c:
         cur = c.execute(
-            """INSERT INTO rooms (theme_id, order_idx, name, description, puzzle_type, question, answer,
-                                  hints_json, clues_json, minigame_json, source, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                theme_id, order_idx, data["name"], data["description"], data["puzzle_type"],
-                data["question"], data["answer"], json.dumps(data["hints"], ensure_ascii=False),
-                json.dumps(data.get("clues", []), ensure_ascii=False),
-                json.dumps(data.get("minigame"), ensure_ascii=False),
-                source, now_iso(),
-            ),
+            "INSERT INTO themes (key, name, description, style_json, updated_at) VALUES (?, ?, ?, ?, ?)",
+            (key, name, description, json.dumps(style, ensure_ascii=False), now_iso()),
         )
-        return cur.lastrowid
+        theme_id = cur.lastrowid
+        for order_idx, (data, source) in enumerate(rooms):
+            _insert_room(c, theme_id, order_idx, data, source)
+        return theme_id
+
+
+def insert_room(theme_id: int, order_idx: int, data: dict, source: str) -> int:
+    with get_conn() as c:
+        return _insert_room(c, theme_id, order_idx, data, source)
+
+
+def _insert_room(c, theme_id: int, order_idx: int, data: dict, source: str) -> int:
+    cur = c.execute(
+        """INSERT INTO rooms (theme_id, order_idx, name, description, puzzle_type, question, answer,
+                              hints_json, clues_json, minigame_json, source, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            theme_id, order_idx, data["name"], data["description"], data["puzzle_type"],
+            data["question"], data["answer"], json.dumps(data["hints"], ensure_ascii=False),
+            json.dumps(data.get("clues", []), ensure_ascii=False),
+            json.dumps(data.get("minigame"), ensure_ascii=False),
+            source, now_iso(),
+        ),
+    )
+    return cur.lastrowid
 
 
 def update_room(room_id: int, fields: dict) -> None:
@@ -168,20 +176,36 @@ def update_session(session_id: str, fields: dict) -> None:
         c.execute(f"UPDATE game_sessions SET {cols} WHERE id = ?", (*fields.values(), session_id))
 
 
-def set_session_room_status(session_id: str, slot: int, status: str, cleared_by: Optional[str] = None) -> None:
-    with get_conn() as c:
-        c.execute(
-            """UPDATE session_rooms SET status = ?, cleared_by = ?,
-                      cleared_at = CASE WHEN ? = 'cleared' THEN ? ELSE NULL END
-               WHERE session_id = ? AND slot = ?""",
-            (status, cleared_by, status, now_iso(), session_id, slot),
-        )
-
-
-def set_session_room_flag(session_id: str, slot: int, flag: str) -> None:
+def set_session_room_flag(session_id: str, slot: int, flag: str) -> bool:
+    """플래그를 켠다. 이번 호출이 켰으면 True, 이미 켜져 있었으면 False (동시 요청 중 한 번만 True)"""
     assert flag in ("puzzle_solved", "key_used")
     with get_conn() as c:
-        c.execute(f"UPDATE session_rooms SET {flag} = 1 WHERE session_id = ? AND slot = ?", (session_id, slot))
+        cur = c.execute(
+            f"UPDATE session_rooms SET {flag} = 1 WHERE session_id = ? AND slot = ? AND {flag} = 0",
+            (session_id, slot),
+        )
+        return cur.rowcount > 0
+
+
+def mark_room_cleared(session_id: str, slot: int, cleared_by: str) -> bool:
+    """방을 클리어 처리. 이번 호출이 처리했으면 True (이미 클리어됐으면 False)"""
+    with get_conn() as c:
+        cur = c.execute(
+            """UPDATE session_rooms SET status = 'cleared', cleared_by = ?, cleared_at = ?
+               WHERE session_id = ? AND slot = ? AND status != 'cleared'""",
+            (cleared_by, now_iso(), session_id, slot),
+        )
+        return cur.rowcount > 0
+
+
+def unlock_room(session_id: str, slot: int) -> bool:
+    """잠긴 방이면 연다. 열었으면 True"""
+    with get_conn() as c:
+        cur = c.execute(
+            "UPDATE session_rooms SET status = 'unlocked' WHERE session_id = ? AND slot = ? AND status = 'locked'",
+            (session_id, slot),
+        )
+        return cur.rowcount > 0
 
 
 def reset_session_rooms(session_id: str) -> None:
@@ -223,9 +247,11 @@ def get_item(session_id: str, slot: int, kind: str, ref_id: str) -> Optional[dic
         return dict(row) if row else None
 
 
-def mark_item_used(item_id: int) -> None:
+def mark_item_used(item_id: int) -> bool:
+    """아이템 사용 처리. 이번 호출이 사용했으면 True"""
     with get_conn() as c:
-        c.execute("UPDATE session_items SET used = 1 WHERE id = ?", (item_id,))
+        cur = c.execute("UPDATE session_items SET used = 1 WHERE id = ? AND used = 0", (item_id,))
+        return cur.rowcount > 0
 
 
 def increment_hints(session_id: str) -> None:

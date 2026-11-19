@@ -36,27 +36,28 @@ class AIProvider:
     async def complete(self, system: str, user: str, max_tokens: int = 800) -> str:
         raise NotImplementedError
 
+    @staticmethod
+    async def _post_json(url: str, headers: dict, body: dict) -> dict:
+        """공통 HTTP 호출: JSON 요청 → 오류 상태면 예외 → JSON 응답"""
+        async with httpx.AsyncClient(timeout=settings.AI_TIMEOUT_SEC) as client:
+            res = await client.post(url, headers={"content-type": "application/json", **headers}, json=body)
+            res.raise_for_status()
+            return res.json()
+
 
 class ClaudeProvider(AIProvider):
     name = "claude"
     URL = "https://api.anthropic.com/v1/messages"
 
     async def complete(self, system: str, user: str, max_tokens: int = 800) -> str:
-        headers = {
-            "x-api-key": settings.AI_API_KEY,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        }
+        headers = {"x-api-key": settings.AI_API_KEY, "anthropic-version": "2023-06-01"}
         body = {
             "model": settings.AI_MODEL,
             "max_tokens": max_tokens,
             "system": system,
             "messages": [{"role": "user", "content": user}],
         }
-        async with httpx.AsyncClient(timeout=settings.AI_TIMEOUT_SEC) as client:
-            res = await client.post(self.URL, headers=headers, json=body)
-            res.raise_for_status()
-            data = res.json()
+        data = await self._post_json(self.URL, headers, body)
         return "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
 
 
@@ -65,17 +66,14 @@ class GeminiProvider(AIProvider):
     URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
     async def complete(self, system: str, user: str, max_tokens: int = 800) -> str:
-        headers = {"x-goog-api-key": settings.AI_API_KEY, "content-type": "application/json"}
+        headers = {"x-goog-api-key": settings.AI_API_KEY}
         body = {
             "systemInstruction": {"parts": [{"text": system}]},
             "contents": [{"role": "user", "parts": [{"text": user}]}],
             # 최신 Gemini 는 '생각' 토큰도 출력 한도에 포함되므로 여유를 크게 둔다
             "generationConfig": {"maxOutputTokens": max_tokens + 4096, "temperature": 0.9},
         }
-        async with httpx.AsyncClient(timeout=settings.AI_TIMEOUT_SEC) as client:
-            res = await client.post(self.URL.format(model=settings.AI_MODEL), headers=headers, json=body)
-            res.raise_for_status()
-            data = res.json()
+        data = await self._post_json(self.URL.format(model=settings.AI_MODEL), headers, body)
         parts = ((data.get("candidates") or [{}])[0].get("content") or {}).get("parts", [])
         return "".join(p.get("text", "") for p in parts if not p.get("thought"))
 

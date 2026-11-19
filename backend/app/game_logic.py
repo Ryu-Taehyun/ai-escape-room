@@ -213,7 +213,9 @@ def get_state(session_id: str) -> dict:
 
 # ---------- 방 클리어 판정 ----------
 def _try_clear(session_id: str, slot: int, player_name: str) -> Optional[str]:
-    """조건을 모두 만족하면 방을 클리어하고 메시지 반환, 아니면 None."""
+    """조건을 모두 만족하면 방을 클리어하고 메시지 반환, 아니면 None.
+    동시에 두 요청이 와도 클리어 처리(mark_room_cleared)는 DB 에서 한 번만 성공하므로
+    다음 방 열기·탈출 처리도 한 번만 실행된다."""
     session = repo.get_session(session_id)
     target = _get_slot(session_id, slot)
     if target["status"] == "cleared":
@@ -224,13 +226,12 @@ def _try_clear(session_id: str, slot: int, player_name: str) -> Optional[str]:
     if has_minigame(room) and not target["key_used"]:
         return None
 
-    repo.set_session_room_status(session_id, slot, "cleared", cleared_by=player_name)
+    if not repo.mark_room_cleared(session_id, slot, player_name):
+        return None  # 다른 요청이 먼저 클리어함
     if slot == session["room_count"] - 1:
         repo.update_session(session_id, {"status": "escaped", "ended_at": now_iso()})
         return "탈출 성공!"
-    nxt = _get_slot(session_id, slot + 1)
-    if nxt["status"] == "locked":
-        repo.set_session_room_status(session_id, slot + 1, "unlocked")
+    repo.unlock_room(session_id, slot + 1)
     return "방 클리어! 다음 방의 문이 열렸습니다."
 
 
@@ -256,11 +257,15 @@ def submit_answer(session_id: str, slot: int, answer: str, player_name: str) -> 
     if not check_answer(answer, room["answer"]):
         return False, "틀렸습니다. 방 안의 단서를 더 조사해 보세요.", False
 
-    repo.set_session_room_flag(session_id, slot, "puzzle_solved")
+    if not repo.set_session_room_flag(session_id, slot, "puzzle_solved"):
+        return True, "이미 해제된 암호입니다.", False  # 동시에 들어온 다른 정답이 먼저 처리됨
     cleared = _try_clear(session_id, slot, player_name)
     if cleared:
         return True, f"정답! {cleared}", True
-    return True, f"정답! 하지만 문을 열려면 '{room['minigame'].get('reward', '열쇠')}'이(가) 필요합니다.", False
+    mg = room.get("minigame")
+    if mg and not _get_slot(session_id, slot)["key_used"]:
+        return True, f"정답! 하지만 문을 열려면 '{mg.get('reward', '열쇠')}'이(가) 필요합니다.", False
+    return True, "정답! 문이 열렸습니다.", False  # 같은 순간 열쇠 사용 쪽에서 먼저 클리어한 경우
 
 
 # ---------- 단서 ----------
@@ -312,8 +317,8 @@ def use_key(session_id: str, slot: int, player_name: str) -> tuple[str, bool]:
     key = repo.get_item(session_id, slot, "key", "key")
     if not key:
         raise GameError("열쇠가 없습니다. 이 방의 미니게임을 먼저 통과하세요.")
-    repo.mark_item_used(key["id"])
-    repo.set_session_room_flag(session_id, slot, "key_used")
+    if not repo.mark_item_used(key["id"]) or not repo.set_session_room_flag(session_id, slot, "key_used"):
+        return "이미 열쇠를 사용했습니다.", False
     cleared = _try_clear(session_id, slot, player_name)
     if cleared:
         return f"🔑 '{key['name']}' 사용! {cleared}", True
@@ -342,9 +347,8 @@ def admin_add_time(session_id: str, delta_min: int) -> None:
 
 def admin_force_unlock(session_id: str, slot: int) -> None:
     _require_session(session_id)
-    target = _get_slot(session_id, slot)
-    if target["status"] == "locked":
-        repo.set_session_room_status(session_id, slot, "unlocked")
+    _get_slot(session_id, slot)  # 없는 방이면 404
+    repo.unlock_room(session_id, slot)
     repo.add_log("admin", "session", session_id, {"action": "unlock", "slot": slot})
 
 

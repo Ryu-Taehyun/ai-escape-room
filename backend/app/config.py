@@ -32,6 +32,9 @@ class Settings:
     # API 키가 있으면 게임을 시작할 때마다 AI 가 모든 방의 문제를 새로 만든다 (false 면 테마의 기본 방 사용)
     AI_RANDOM_ROOMS: bool = os.getenv("AI_RANDOM_ROOMS", "true").strip().lower() not in ("0", "false", "no", "off")
 
+    # nginx 등 리버스 프록시 뒤에서 실행할 때만 true → 관리자 로그인 제한에 X-Forwarded-For 사용
+    TRUST_PROXY: bool = os.getenv("TRUST_PROXY", "false").strip().lower() in ("1", "true", "yes", "on")
+
     CORS_ORIGINS: list[str] = [
         o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",") if o.strip()
     ]
@@ -60,6 +63,18 @@ class Settings:
     @property
     def admin_password_is_default(self) -> bool:
         return self.ADMIN_PASSWORD in ("admin1234", "change-me", "")
+
+    @property
+    def is_production(self) -> bool:
+        return self.APP_ENV.strip().lower() in ("production", "prod")
+
+    def check_startup(self) -> None:
+        """서버 시작 전 설정 점검. 운영 환경에서 기본 관리자 비밀번호면 시작을 거부한다."""
+        if self.is_production and self.admin_password_is_default:
+            raise RuntimeError(
+                "APP_ENV=production 에서는 기본 관리자 비밀번호로 서버를 시작할 수 없습니다. "
+                "backend/.env 의 ADMIN_PASSWORD 를 바꾸세요."
+            )
 
 
 settings = Settings()
