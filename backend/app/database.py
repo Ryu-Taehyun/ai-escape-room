@@ -6,6 +6,7 @@
 - game_sessions : 플레이 세션 (방 개수, 제한 시간, 상태)
 - session_rooms : 세션에 배치된 방과 진행 상태 (locked / unlocked / cleared)
                   + puzzle_solved / key_used (방 클리어 조건)
+                  + room_json: AI 가 이 게임만을 위해 새로 만든 방 내용 (없으면 테마의 기본 방 사용)
 - session_items : 팀이 공유하는 인벤토리 (찾은 단서, 미니게임으로 얻은 열쇠)
 - edit_logs     : 관리자 / AI 편집 이력
 """
@@ -51,7 +52,7 @@ CREATE TABLE IF NOT EXISTS game_sessions (
     time_limit_min INTEGER NOT NULL,
     started_at     TEXT NOT NULL,
     ended_at       TEXT,
-    status         TEXT NOT NULL DEFAULT 'playing',  -- playing | escaped | failed
+    status         TEXT NOT NULL DEFAULT 'playing',  -- waiting | playing | escaped | failed
     hints_used     INTEGER NOT NULL DEFAULT 0,
     extra_seconds  INTEGER NOT NULL DEFAULT 0          -- 관리자가 추가/차감한 시간
 );
@@ -65,6 +66,7 @@ CREATE TABLE IF NOT EXISTS session_rooms (
     cleared_by  TEXT,
     puzzle_solved INTEGER NOT NULL DEFAULT 0,
     key_used    INTEGER NOT NULL DEFAULT 0,
+    room_json   TEXT,
     PRIMARY KEY (session_id, slot)
 );
 
@@ -146,6 +148,8 @@ def _migrate_columns(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE session_rooms ADD COLUMN puzzle_solved INTEGER NOT NULL DEFAULT 0")
         if "key_used" not in sr_cols:
             conn.execute("ALTER TABLE session_rooms ADD COLUMN key_used INTEGER NOT NULL DEFAULT 0")
+        if "room_json" not in sr_cols:
+            conn.execute("ALTER TABLE session_rooms ADD COLUMN room_json TEXT")
 
 
 def _room_values(room: dict) -> tuple:

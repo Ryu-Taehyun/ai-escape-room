@@ -125,6 +125,8 @@ export default function Lobby({ onJoin }: Props) {
     return pickRooms(rooms, roomCount);
   }, [selected, roomCount]);
 
+  // 게임마다 AI 가 문제를 새로 만들면 방 이름·단서는 시작해야 알 수 있다
+  const aiRandom = !!config?.ai_random_rooms;
   const minigameCount = route.filter((r) => r.minigame).length;
   const clueCount = route.reduce((n, r) => n + r.clue_count, 0);
   const minPerRoom = Math.round(timeMin / Math.max(1, route.length));
@@ -280,7 +282,7 @@ export default function Lobby({ onJoin }: Props) {
                         ))}
                       </span>
                       <span className="tcard-stats">
-                        🚪 방 {t.room_names.length} · 🔎 단서 {clues} · 🎮 미니게임 {games}
+                        {aiRandom ? `🚪 방 ${t.room_names.length} · 🎲 문제는 게임마다 AI 생성` : `🚪 방 ${t.room_names.length} · 🔎 단서 ${clues} · 🎮 미니게임 ${games}`}
                       </span>
                     </span>
                     {t.key === themeKey && <span className="tcard-check">✓</span>}
@@ -334,9 +336,7 @@ export default function Lobby({ onJoin }: Props) {
               <div className="route2">
                 <div className="route2-head">
                   <span>탈출 경로</span>
-                  <small>
-                    🔎 단서 {clueCount} · 🎮 미니게임 {minigameCount}
-                  </small>
+                  <small>{aiRandom ? '🎲 게임마다 AI가 새 문제를 만들어요' : `🔎 단서 ${clueCount} · 🎮 미니게임 ${minigameCount}`}</small>
                 </div>
                 <ol>
                   {route.map((r, i) => {
@@ -344,12 +344,14 @@ export default function Lobby({ onJoin }: Props) {
                     return (
                       <li key={`${r.name}-${i}`} className={last ? 'final' : ''} style={{ animationDelay: `${i * 70}ms` }}>
                         <span className="node">{last ? '🚪' : i + 1}</span>
-                        <span className="room-name">{r.name}</span>
-                        <span className="room-icons">
-                          {r.clue_count > 0 && <i title={`단서 ${r.clue_count}개`}>🔎{r.clue_count}</i>}
-                          {r.has_puzzle && <i title="암호">🔐</i>}
-                          {r.minigame && <i title={`미니게임: ${MINIGAME_LABEL[r.minigame]}`}>🎮</i>}
-                        </span>
+                        <span className="room-name">{aiRandom ? (last ? '최종 탈출 방 · AI 생성' : `${i + 1}번째 방 · AI 생성`) : r.name}</span>
+                        {!aiRandom && (
+                          <span className="room-icons">
+                            {r.clue_count > 0 && <i title={`단서 ${r.clue_count}개`}>🔎{r.clue_count}</i>}
+                            {r.has_puzzle && <i title="암호">🔐</i>}
+                            {r.minigame && <i title={`미니게임: ${MINIGAME_LABEL[r.minigame]}`}>🎮</i>}
+                          </span>
+                        )}
                       </li>
                     );
                   })}
@@ -358,7 +360,7 @@ export default function Lobby({ onJoin }: Props) {
             )}
 
             <button className="start-btn" disabled={busy || !themeKey} onClick={create}>
-              {busy ? '방을 준비하는 중...' : lc.start}
+              {busy ? (aiRandom ? `AI가 이번 게임의 방을 만드는 중... (최대 ${config?.ai_wait_sec ?? 30}초)` : '방을 준비하는 중...') : lc.start}
             </button>
           </section>
 
@@ -414,6 +416,7 @@ export default function Lobby({ onJoin }: Props) {
           {config && (
             <span>
               AI 모드 <b>{config.ai_provider}</b>
+              {config.ai_random_rooms && ' · 🎲 게임마다 새 문제'}
             </span>
           )}
           <span>React · Three.js · FastAPI · WebSocket</span>

@@ -21,9 +21,16 @@ class Settings:
 
     AI_PROVIDER: str = os.getenv("AI_PROVIDER", "mock").lower()
     AI_API_KEY: str = os.getenv("AI_API_KEY", "")
-    # 비워 두면 provider 별 기본 모델 사용
-    AI_MODEL: str = os.getenv("AI_MODEL", "").strip() or {"gemini": "gemini-2.5-flash"}.get(AI_PROVIDER, "claude-sonnet-5-5")
+    _DEFAULT_MODELS = {"claude": "claude-sonnet-5-5", "gemini": "gemini-2.5-flash"}
+    # 비워 두거나 다른 회사 모델 이름이 남아 있으면 (예: gemini 인데 claude-...) provider 기본 모델 사용
+    AI_MODEL: str = os.getenv("AI_MODEL", "").strip()
+    if not AI_MODEL or (AI_PROVIDER == "gemini" and AI_MODEL.startswith("claude")) or (
+        AI_PROVIDER == "claude" and AI_MODEL.startswith("gemini")
+    ):
+        AI_MODEL = _DEFAULT_MODELS.get(AI_PROVIDER, "claude-sonnet-5-5")
     AI_TIMEOUT_SEC: float = float(os.getenv("AI_TIMEOUT_SEC", "30"))
+    # API 키가 있으면 게임을 시작할 때마다 AI 가 모든 방의 문제를 새로 만든다 (false 면 테마의 기본 방 사용)
+    AI_RANDOM_ROOMS: bool = os.getenv("AI_RANDOM_ROOMS", "true").strip().lower() not in ("0", "false", "no", "off")
 
     CORS_ORIGINS: list[str] = [
         o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",") if o.strip()
@@ -40,6 +47,15 @@ class Settings:
     HINT_PENALTY_SEC: int = int(os.getenv("HINT_PENALTY_SEC", "60"))  # 힌트 1회당 줄어드는 시간 (0 = 감점 없음)
     ADMIN_TOKEN_TTL_SEC: int = int(os.getenv("ADMIN_TOKEN_TTL_SEC", str(2 * 60 * 60)))  # 관리자 로그인 유지 시간
     SESSION_KEEP_HOURS: int = int(os.getenv("SESSION_KEEP_HOURS", "24"))  # 이보다 오래된 세션은 서버 시작 시 삭제
+
+    @property
+    def ai_enabled(self) -> bool:
+        """실제 LLM 을 쓸 수 있는가 (mock 이 아니고 키가 있음)"""
+        return self.AI_PROVIDER in ("claude", "gemini") and bool(self.AI_API_KEY)
+
+    @property
+    def ai_random_rooms(self) -> bool:
+        return self.ai_enabled and self.AI_RANDOM_ROOMS
 
     @property
     def admin_password_is_default(self) -> bool:

@@ -58,6 +58,7 @@ npm run dev
 | | `SESSION_KEEP_HOURS` | 이보다 오래된 게임 세션은 서버 시작 시 삭제, 기본 24 |
 | | `AI_API_KEY` | 비워둠. 키를 넣고 `AI_PROVIDER` 를 `claude` / `gemini` 로 변경 |
 | | `AI_MODEL` | 비우면 claude → `claude-sonnet-5-5`, gemini → `gemini-2.5-flash` |
+| | `AI_RANDOM_ROOMS` | 기본 `true`: 키가 있으면 **게임을 시작할 때마다 AI 가 모든 방의 문제를 새로 생성** · `false` 면 테마의 기본 방 |
 | | `ADMIN_PASSWORD` | 인게임 관리자 비밀번호 — **반드시 변경** (기본값이면 서버 시작 시 경고, 관리자 로그인 시 안내) |
 | | `DATABASE_PATH`, `CORS_ORIGINS` | DB 경로, 허용 프론트 주소 |
 | `frontend/.env` | `VITE_API_URL`, `VITE_WS_URL` | 비우면 프록시 사용. 배포 시에만 입력 |
@@ -289,7 +290,12 @@ ai-escape-room/
 
 - 현재 `AI_PROVIDER=mock`: 카이사르 암호·수열·수수께끼·색 코드 퍼즐을 규칙 기반으로 생성하며, **퍼즐 정보를 2~3개 단서로 나누고** 50% 확률(최종 방은 항상)로 미니게임을 붙입니다. 힌트는 DB 힌트 → "정답 N글자, ○로 시작" 순.
 - 실제 LLM 은 `prompts/generate_room.txt` 의 JSON 형식(단서·미니게임 포함)으로 방을 만들고, 형식이 틀리면 mock 으로 대체됩니다.
-- 실제 LLM 연결: `backend/.env` 에서 `AI_PROVIDER=claude` 또는 `gemini`, `AI_API_KEY=...` 입력 (Gemini 무료 키는 Google AI Studio 에서 발급). 호출이 실패하면 자동으로 mock 으로 대체되어 게임은 멈추지 않습니다.
+- 실제 LLM 연결: `backend/.env` 에서 `AI_PROVIDER=claude` 또는 `gemini`, `AI_API_KEY=...` 입력 (Gemini 무료 키는 Google AI Studio 에서 발급).
+- **게임마다 새 문제** (`AI_RANDOM_ROOMS=true`, 키가 있을 때 기본): 게임을 만들 때 방마다 AI 에게 동시에 요청해 이름·묘사·퍼즐·정답·힌트·단서·미니게임을 새로 만듭니다.
+  - 방마다 다른 퍼즐 유형(암호·수열·수수께끼·코드·논리)을 지정해 겹치지 않게 하고, 단서는 가구와 겹치지 않는 자리에 다시 배치합니다.
+  - 형식이 틀렸거나 정답이 없는 초안, 시간(`AI_TIMEOUT_SEC`) 안에 오지 않은 방은 버리고 **테마의 기본 방**으로 진행합니다.
+  - 생성된 방은 그 게임(`session_rooms.room_json`)에만 저장되어, 관리자가 편집하는 테마의 기본 방은 바뀌지 않습니다.
+  - 무료 키는 하루 요청 수가 적으므로 (방 4개 게임 = 요청 4번) 한도가 걱정되면 `AI_RANDOM_ROOMS=false`. 호출이 실패하면 자동으로 mock 으로 대체되어 게임은 멈추지 않습니다.
 - 다른 LLM 사용 시 `ai_service.py` 의 `AIProvider.complete()` 만 구현하면 됩니다.
 - 프롬프트 수정은 `backend/app/prompts/*.txt` 에서 (코드 수정 불필요).
 
