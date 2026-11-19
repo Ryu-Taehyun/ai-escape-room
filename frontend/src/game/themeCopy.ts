@@ -42,7 +42,6 @@ export interface ThemeCopy {
   failedText: string;
   toLobby: string;
   timerLabel: string;
-  resumeHint: string;
   scareText: string;
 }
 
@@ -88,7 +87,6 @@ export const COPY: Record<ThemeKind, ThemeCopy> = {
     failedText: '격리문이 닫혔다. 손전등이 꺼진다. 어둠 속에서 숨소리가 가까워진다.',
     toLobby: '처음으로',
     timerLabel: '격리까지',
-    resumeHint: '화면을 클릭하면 계속',
     scareText: '…방금 뭐였지?',
   },
   egypt: {
@@ -132,7 +130,6 @@ export const COPY: Record<ThemeKind, ThemeCopy> = {
     failedText: '모래시계가 멈췄다. 무덤이 다시 봉인된다.',
     toLobby: '처음으로',
     timerLabel: '모래시계',
-    resumeHint: '화면을 클릭하면 계속',
     scareText: '무덤이 흔들린다…',
   },
   neutral: {
@@ -172,7 +169,6 @@ export const COPY: Record<ThemeKind, ThemeCopy> = {
     failedText: '',
     toLobby: '로비로',
     timerLabel: '남은 시간',
-    resumeHint: '화면을 클릭하면 계속',
     scareText: '',
   },
 };

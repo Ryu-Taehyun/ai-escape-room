@@ -4,8 +4,9 @@
 (토큰은 서버 메모리에 저장 - 서버 재시작 시 재로그인 필요)
 """
 import secrets
+import time
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
 from .. import ai_service, game_logic, repository as repo
 from ..config import settings
@@ -14,24 +15,47 @@ from ..schemas import (
     AddTimeRequest, AdminLoginRequest, AdminLoginResponse, EditLog, GenerateRoomRequest,
     RoomDraft, RoomFull, RoomUpdate, ThemeCreate, ThemeFull, ThemeUpdate,
 )
+from ..ratelimit import login_limiter
 from ..ws_manager import manager
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
-_tokens: set[str] = set()
+_tokens: dict[str, float] = {}  # token → 만료 시각
 
 
 def require_admin(x_admin_token: str = Header(default="")) -> None:
-    if x_admin_token not in _tokens:
-        raise HTTPException(status_code=401, detail="관리자 인증이 필요합니다.")
+    exp = _tokens.get(x_admin_token)
+    if exp is None or exp < time.time():
+        _tokens.pop(x_admin_token, None)
+        raise HTTPException(status_code=401, detail="관리자 인증이 필요합니다. (로그인이 만료되었을 수 있습니다)")
 
 
 @router.post("/login", response_model=AdminLoginResponse)
-def login(body: AdminLoginRequest):
+def login(body: AdminLoginRequest, request: Request):
+    ip = request.client.host if request.client else "unknown"
+    wait = login_limiter.retry_after(ip)
+    if wait:
+        raise HTTPException(status_code=429, detail=f"로그인 시도가 너무 많습니다. {wait}초 후 다시 시도하세요.")
     if not secrets.compare_digest(body.password, settings.ADMIN_PASSWORD):
+        login_limiter.record(ip)
         raise HTTPException(status_code=401, detail="비밀번호가 틀렸습니다.")
+    login_limiter.reset(ip)
+    now = time.time()
+    for t, exp in list(_tokens.items()):  # 만료된 토큰 정리
+        if exp < now:
+            _tokens.pop(t, None)
     token = secrets.token_urlsafe(24)
-    _tokens.add(token)
-    return {"token": token}
+    _tokens[token] = now + settings.ADMIN_TOKEN_TTL_SEC
+    warning = (
+        "기본 관리자 비밀번호를 쓰고 있습니다. backend/.env 의 ADMIN_PASSWORD 를 바꾸세요."
+        if settings.admin_password_is_default else None
+    )
+    return {"token": token, "expires_in": settings.ADMIN_TOKEN_TTL_SEC, "warning": warning}
+
+
+@router.post("/logout", dependencies=[Depends(require_admin)])
+def logout(x_admin_token: str = Header(default="")):
+    _tokens.pop(x_admin_token, None)
+    return {"ok": True}
 
 
 # ---------- 테마 / 방 편집 ----------

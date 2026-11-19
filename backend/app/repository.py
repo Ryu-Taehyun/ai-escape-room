@@ -216,6 +216,15 @@ def increment_hints(session_id: str) -> None:
         c.execute("UPDATE game_sessions SET hints_used = hints_used + 1 WHERE id = ?", (session_id,))
 
 
+def cleanup_sessions(keep_hours: int) -> int:
+    """오래된 세션 삭제 (진행 기록·인벤토리는 ON DELETE CASCADE 로 함께 삭제). 삭제 수 반환"""
+    from datetime import datetime, timedelta, timezone
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=keep_hours)).isoformat()
+    with get_conn() as c:
+        cur = c.execute("DELETE FROM game_sessions WHERE started_at < ?", (cutoff,))
+        return cur.rowcount
+
+
 # ---------- Logs ----------
 def add_log(actor: str, target_type: str, target_id, payload: dict) -> None:
     with get_conn() as c:

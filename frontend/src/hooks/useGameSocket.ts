@@ -16,18 +16,21 @@ interface Options {
   playerName: string;
   onStateChanged: () => void;
   onMark: (m: MarkEvent) => void;
+  /** 팀원이 결과 화면에서 "다시 하기"를 눌러 새 방을 만들었을 때 */
+  onRestart: (sessionId: string, by: string) => void;
   initialPosition: () => Vec3;
 }
 
-export function useGameSocket({ sessionId, playerName, onStateChanged, onMark, initialPosition }: Options) {
+export function useGameSocket({ sessionId, playerName, onStateChanged, onMark, onRestart, initialPosition }: Options) {
   const socketRef = useRef<GameSocket | null>(null);
   const [players, setPlayers] = useState<Record<string, RemotePlayer>>({});
   const [myId, setMyId] = useState('');
+  const [myName, setMyName] = useState(''); // 서버가 정한 이름 (같은 닉네임이 있으면 "이름 (2)")
   const [connected, setConnected] = useState(false);
   const [everConnected, setEverConnected] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const cbs = useRef({ onStateChanged, onMark, initialPosition });
-  cbs.current = { onStateChanged, onMark, initialPosition };
+  const cbs = useRef({ onStateChanged, onMark, onRestart, initialPosition });
+  cbs.current = { onStateChanged, onMark, onRestart, initialPosition };
 
   const pushMsg = useCallback((name: string, text: string, system = false) => {
     setMessages((m) => [...m.slice(-80), { id: String(++msgSeq), name, text, system }]);
@@ -46,6 +49,7 @@ export function useGameSocket({ sessionId, playerName, onStateChanged, onMark, i
       sock.on('_close', () => setConnected(false)),
       sock.on('welcome', (m) => {
         setMyId(m.player_id);
+        setMyName(m.name ?? '');
         setPlayers(byId(m.players));
         sock.send({ type: 'move', position: cbs.current.initialPosition(), rotation: 0, slot: 0 });
       }),
@@ -71,6 +75,7 @@ export function useGameSocket({ sessionId, playerName, onStateChanged, onMark, i
       sock.on('state_changed', () => cbs.current.onStateChanged()),
       sock.on('content_updated', () => cbs.current.onStateChanged()),
       sock.on('mark', (m) => cbs.current.onMark({ playerId: m.player_id, name: m.name, position: m.position })),
+      sock.on('restart', (m) => cbs.current.onRestart(m.session_id, m.by)),
     ];
     sock.connect();
     return () => {
@@ -82,5 +87,5 @@ export function useGameSocket({ sessionId, playerName, onStateChanged, onMark, i
 
   const send = useCallback((msg: object) => socketRef.current?.send(msg), []);
 
-  return { players, myId, connected, everConnected, messages, pushMsg, send };
+  return { players, myId, myName, connected, everConnected, messages, pushMsg, send };
 }

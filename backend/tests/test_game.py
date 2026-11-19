@@ -227,3 +227,53 @@ def test_waiting_room_ready_and_mark():
         # 혼자 바로 시작
         sid2 = c.post("/api/sessions", json={"theme_key": "egypt", "start_now": False}).json()["id"]
         assert c.post(f"/api/sessions/{sid2}/start").json()["status"] == "playing"
+
+
+def test_rate_limits_and_admin_token():
+    from app.ratelimit import answer_limiter, login_limiter
+    from app.routers import admin as admin_router
+    with TestClient(app) as c:
+        sid = c.post("/api/sessions", json={"theme_key": "egypt", "room_count": 2}).json()["id"]
+        codes = [c.post(f"/api/sessions/{sid}/rooms/0/answer", json={"answer": "0000"}).status_code for _ in range(7)]
+        assert codes[:6] == [200] * 6 and codes[6] == 429  # 30초에 6번 틀리면 잠시 차단
+        answer_limiter.reset(f"{sid}:0")
+        assert c.post(f"/api/sessions/{sid}/rooms/0/answer", json={"answer": "1035"}).json()["correct"]
+
+        login_limiter._hits.clear()
+        codes = [c.post("/api/admin/login", json={"password": "nope"}).status_code for _ in range(6)]
+        assert codes[:5] == [401] * 5 and codes[5] == 429
+        login_limiter._hits.clear()
+        res = c.post("/api/admin/login", json={"password": "test-pw"}).json()
+        assert res["expires_in"] > 0
+        h = {"X-Admin-Token": res["token"]}
+        assert c.get("/api/admin/themes", headers=h).status_code == 200
+        admin_router._tokens[res["token"]] = 0  # 만료시킴
+        assert c.get("/api/admin/themes", headers=h).status_code == 401
+
+
+def test_hint_penalty_unique_names_and_team_restart():
+    with TestClient(app) as c:
+        sid = c.post("/api/sessions", json={"theme_key": "egypt", "room_count": 2}).json()["id"]
+        before = c.get(f"/api/sessions/{sid}").json()["remaining_seconds"]
+        hint = c.post(f"/api/sessions/{sid}/rooms/0/hint", json={"level": 0}).json()
+        assert hint["penalty_sec"] == 60
+        assert before - c.get(f"/api/sessions/{sid}").json()["remaining_seconds"] >= 59
+
+        new_sid = c.post("/api/sessions", json={"theme_key": "egypt", "start_now": False}).json()["id"]
+        with c.websocket_connect(f"/ws/{sid}?name=Kim") as a, c.websocket_connect(f"/ws/{sid}?name=Kim") as b:
+            assert a.receive_json()["name"] == "Kim"
+            assert b.receive_json()["name"] == "Kim (2)"  # 같은 닉네임엔 번호
+            b.send_json({"type": "restart", "session_id": new_sid})
+            for _ in range(6):
+                m = a.receive_json()
+                if m["type"] == "restart":
+                    assert m["session_id"] == new_sid and m["by"] == "Kim (2)"
+                    break
+            else:
+                raise AssertionError("restart 메시지를 받지 못함")
+
+
+def test_egypt_judgment_puzzle():
+    from app import game_logic
+    room = next(r for r in game_logic.repo.list_rooms(game_logic.repo.get_theme_by_key("egypt")["id"]) if r["order_idx"] == 2)
+    assert room["answer"] == "12" and "2" in room["clues"][0]["text"]

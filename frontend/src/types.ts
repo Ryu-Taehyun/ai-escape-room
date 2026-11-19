@@ -39,6 +39,7 @@ export interface GameConfig {
   min_time_min: number;
   max_time_min: number;
   default_time_min: number;
+  hint_penalty_sec: number;
   ai_provider: string;
 }
 
@@ -156,6 +157,7 @@ export interface HintResponse {
   level: number;
   total: number;
   source: string;
+  penalty_sec: number;
 }
 
 export interface RemotePlayer {

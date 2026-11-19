@@ -308,9 +308,11 @@ def use_key(session_id: str, slot: int, player_name: str) -> tuple[str, bool]:
 
 
 def get_room_for_hint(session_id: str, slot: int) -> dict:
-    _require_playing(session_id)
+    session = _require_playing(session_id)
     _, room = _open_slot(session_id, slot)
     repo.increment_hints(session_id)
+    if settings.HINT_PENALTY_SEC > 0:  # 힌트 1회당 제한 시간 감점
+        repo.update_session(session_id, {"extra_seconds": session["extra_seconds"] - settings.HINT_PENALTY_SEC})
     return room
 
 

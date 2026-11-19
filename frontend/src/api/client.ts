@@ -48,7 +48,7 @@ export const api = {
 };
 
 export const adminApi = {
-  login: (password: string) => request<{ token: string }>('/api/admin/login', post({ password })),
+  login: (password: string) => request<{ token: string; expires_in: number; warning?: string | null }>('/api/admin/login', post({ password })),
   themes: (t: string) => request<ThemeFull[]>('/api/admin/themes', {}, t),
   createTheme: (t: string, body: { name: string; description: string; style: ThemeStyle; concept_prompt: string }) =>
     request<ThemeFull>('/api/admin/themes', post(body), t),

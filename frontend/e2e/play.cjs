@@ -4,7 +4,7 @@
 //   2) npx playwright install chromium   (처음 한 번, 또는 PW_CHROMIUM_PATH=크롬 실행 파일 경로)
 //   3) npm run e2e            → 공포 테마
 //      npm run e2e -- egypt   → 이집트 테마
-// 대기실 → 입장 → 단서(창 없이) → 잠긴 문 → 퍼즐 정답(자동 복귀) → ESC 일시정지 → 계속하기
+// 대기실 → 입장 → 단서(창 없이) → 잠긴 문 → 퍼즐 정답(자동 복귀) → 창에서 ESC(메뉴 안 뜸) → 일시정지 → 계속하기
 // → Enter 채팅 → Q 핑 → R 단서 다시 보기 → 인벤토리/지도 → 미니게임 창 순서로 확인한다.
 // 결과 스크린샷은 e2e/out/ 에 저장된다.
 // =====================================================================
@@ -95,6 +95,19 @@ const check = (name, ok, extra = '') => {
   await page.keyboard.press('Enter');
   await page.waitForTimeout(2200);
   check('정답 후 창 자동 닫힘 + 마우스 재고정', !(await page.$('.pz')) && (await locked()));
+
+  // 버그 회귀: 상호작용 창에서 ESC → 창만 닫히고 일시정지 메뉴는 뜨지 않아야 함
+  await page.waitForTimeout(1500);
+  await page.keyboard.press('KeyE');
+  await page.waitForSelector('.pz');
+  await page.waitForTimeout(600);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(700);
+  check('창에서 ESC → 창 닫힘, 메뉴 안 뜸', !(await page.$('.pz')) && !(await page.$('.panel.pause')));
+  check('ESC 후 안내 문구 없음', !(await page.$('.resume-hint')));
+  await page.mouse.click(640, 380);
+  await page.waitForTimeout(600);
+  check('한 번 클릭으로 바로 이어짐', (await locked()) && !(await page.$('.pz')));
 
   // ESC → 일시정지 메뉴 → 계속하기
   await page.evaluate(() => document.exitPointerLock());

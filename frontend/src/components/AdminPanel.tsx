@@ -42,10 +42,10 @@ export default function AdminPanel({ session, onClose }: Props) {
 
   async function login() {
     try {
-      const { token: t } = await adminApi.login(password);
+      const { token: t, warning } = await adminApi.login(password);
       setToken(t);
       safeStorage(TOKEN_KEY, t);
-      setMsg('');
+      setMsg(warning ? `⚠ ${warning}` : '');
     } catch (e) {
       setMsg((e as Error).message);
     }

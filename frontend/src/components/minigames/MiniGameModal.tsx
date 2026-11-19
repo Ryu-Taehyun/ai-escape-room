@@ -17,6 +17,7 @@ interface Props {
   kind: ThemeKind;
   copy: ThemeCopy;
   onClose: () => void;
+  onEscape: () => void; // ESC 로 닫기 (재고정 시도 안 함)
   onDone: () => void;
   onState: (s: SessionState) => void;
   onSound: (name: SfxName) => void;
@@ -24,7 +25,7 @@ interface Props {
 
 const TYPE_LABEL = { sequence: '기억력', wires: '전선 연결', timing: '타이밍' } as const;
 
-export default function MiniGameModal({ sessionId, room, playerName, disabled, kind, copy, onClose, onDone, onState, onSound }: Props) {
+export default function MiniGameModal({ sessionId, room, playerName, disabled, kind, copy, onClose, onEscape, onDone, onState, onSound }: Props) {
   const mg = room.minigame!;
   const [challenge, setChallenge] = useState<MinigameChallenge | null>(null);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
@@ -37,11 +38,11 @@ export default function MiniGameModal({ sessionId, room, playerName, disabled, k
     const onKey = (e: KeyboardEvent) => {
       // E / Q 로도 닫기 (키 입력은 브라우저가 마우스 재고정을 허용함)
       if ((e.code === 'KeyE' || e.code === 'KeyQ') && !challenge) onClose();
-      if (e.code === 'Escape' && !challenge) onClose();
+      if (e.code === 'Escape' && !challenge) onEscape();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [challenge, onClose]);
+  }, [challenge, onClose, onEscape]);
 
   async function start() {
     setBusy(true);

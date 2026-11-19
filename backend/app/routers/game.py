@@ -2,12 +2,14 @@
 from fastapi import APIRouter, HTTPException
 
 from .. import ai_service, game_logic, repository as repo
+from ..config import settings
 from ..game_logic import GameError
 from ..schemas import (
     ActionResponse, AnswerRequest, AnswerResponse, CreateSessionRequest, GameConfig, HintRequest,
     HintResponse, InspectResponse, MinigameFinishRequest, MinigameStartResponse, PlayerAction,
     SessionState, ThemeSummary,
 )
+from ..ratelimit import answer_limiter
 from ..ws_manager import manager
 
 router = APIRouter(prefix="/api", tags=["game"])
@@ -77,13 +79,20 @@ async def _notify_clear(sid: str, slot: int, state: dict, by: str) -> None:
 @router.post("/sessions/{session_id}/rooms/{slot}/answer", response_model=AnswerResponse)
 async def submit_answer(session_id: str, slot: int, body: AnswerRequest):
     sid = session_id.upper()
+    limit_key = f"{sid}:{slot}"
+    wait = answer_limiter.retry_after(limit_key)
+    if wait:
+        raise HTTPException(status_code=429, detail=f"너무 많이 틀렸습니다. {wait}초 후 다시 시도하세요.")
     try:
         correct, message, cleared = game_logic.submit_answer(sid, slot, body.answer, body.player_name)
         state = game_logic.get_state(sid)
     except GameError as e:
         _raise(e)
 
+    if not correct:
+        answer_limiter.record(limit_key)
     if correct:
+        answer_limiter.reset(limit_key)
         if cleared:
             await _notify_clear(sid, slot, state, body.player_name)
         else:
@@ -153,4 +162,7 @@ async def request_hint(session_id: str, slot: int, body: HintRequest):
         _raise(e)
     hint, source = await ai_service.generate_hint(room, body.level)
     await manager.broadcast(sid, {"type": "hint_used", "slot": slot, "level": body.level})
-    return {"hint": hint, "level": body.level, "total": len(room["hints"]), "source": source}
+    if settings.HINT_PENALTY_SEC > 0:
+        await manager.chat(sid, None, f"💡 힌트 사용 — 제한 시간 {settings.HINT_PENALTY_SEC}초 감소")
+        await manager.broadcast(sid, {"type": "state_changed", "reason": "hint"})
+    return {"hint": hint, "level": body.level, "total": len(room["hints"]), "source": source, "penalty_sec": settings.HINT_PENALTY_SEC}
