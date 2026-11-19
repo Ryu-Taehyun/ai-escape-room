@@ -41,6 +41,10 @@ export interface GameConfig {
   default_time_min: number;
   hint_penalty_sec: number;
   ai_provider: string;
+  /** API 키가 있어 게임마다 AI 가 방 문제를 새로 만드는가 */
+  ai_random_rooms: boolean;
+  /** 방 생성 최대 대기 시간(초) */
+  ai_wait_sec: number;
 }
 
 export type ClueObject = 'note' | 'board' | 'book' | 'tablet' | 'statue' | 'jar' | 'box';
@@ -86,6 +90,8 @@ export interface SessionRoom {
   puzzle_solved: boolean;
   status: RoomStatus;
   is_final: boolean;
+  /** AI 가 이 게임용으로 새로 만든 방 */
+  ai_generated?: boolean;
   hint_count: number;
   cleared_by: string | null;
   cleared_at: string | null;

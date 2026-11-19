@@ -56,16 +56,28 @@ def _new_session_id() -> str:
             return sid
 
 
-def create_session(theme_key: str, room_count: int, time_limit_min: int, start_now: bool = True) -> str:
-    """start_now=False 면 대기실(waiting) 상태로 만들고, 모두 준비하면 start_session 으로 시작한다."""
+def plan_session(theme_key: str, room_count: int, time_limit_min: int) -> tuple[dict, list[dict]]:
+    """설정 검증 + 이번 게임에 배치할 테마 방 선택. (theme, rooms) 반환"""
     if not settings.MIN_TIME_MIN <= time_limit_min <= settings.MAX_TIME_MIN:
         raise GameError(f"게임 시간은 {settings.MIN_TIME_MIN}~{settings.MAX_TIME_MIN}분이어야 합니다.")
     theme = repo.get_theme_by_key(theme_key)
     if not theme:
         raise GameError("존재하지 않는 테마입니다.", 404)
-    rooms = select_rooms(repo.list_rooms(theme["id"]), room_count)
+    return theme, select_rooms(repo.list_rooms(theme["id"]), room_count)
+
+
+def create_session(
+    theme_key: str, room_count: int, time_limit_min: int, start_now: bool = True,
+    room_overrides: Optional[dict[int, dict]] = None,
+) -> str:
+    """start_now=False 면 대기실(waiting) 상태로 만들고, 모두 준비하면 start_session 으로 시작한다.
+    room_overrides: {slot: 방 내용} - AI 가 이 게임용으로 새로 만든 방 (없는 칸은 테마의 기본 방)"""
+    theme, rooms = plan_session(theme_key, room_count, time_limit_min)
     sid = _new_session_id()
-    repo.create_session(sid, theme["id"], [r["id"] for r in rooms], time_limit_min, "playing" if start_now else "waiting")
+    repo.create_session(
+        sid, theme["id"], [r["id"] for r in rooms], time_limit_min, "playing" if start_now else "waiting",
+        room_overrides,
+    )
     return sid
 
 
@@ -119,7 +131,7 @@ def _open_slot(session_id: str, slot: int) -> tuple[dict, dict]:
     target = _get_slot(session_id, slot)
     if target["status"] == "locked":
         raise GameError("아직 잠겨 있는 방입니다.")
-    return target, repo.get_room(target["room_id"])
+    return target, repo.get_session_room(target)
 
 
 def get_state(session_id: str) -> dict:
@@ -133,7 +145,7 @@ def get_state(session_id: str) -> dict:
 
     rooms_public = []
     for s in slots:
-        room = repo.get_room(s["room_id"])
+        room = repo.get_session_room(s)
         locked = s["status"] == "locked"
         mg = room.get("minigame")
         key = keys.get(s["slot"])
@@ -150,6 +162,7 @@ def get_state(session_id: str) -> dict:
                 "puzzle_solved": bool(s["puzzle_solved"]),
                 "status": s["status"],
                 "is_final": s["slot"] == len(slots) - 1,
+                "ai_generated": bool(s.get("room_json")),
                 "hint_count": len(room["hints"]),
                 "cleared_by": s["cleared_by"],
                 "cleared_at": s["cleared_at"],
@@ -205,7 +218,7 @@ def _try_clear(session_id: str, slot: int, player_name: str) -> Optional[str]:
     target = _get_slot(session_id, slot)
     if target["status"] == "cleared":
         return None
-    room = repo.get_room(target["room_id"])
+    room = repo.get_session_room(target)
     if has_puzzle(room) and not target["puzzle_solved"]:
         return None
     if has_minigame(room) and not target["key_used"]:

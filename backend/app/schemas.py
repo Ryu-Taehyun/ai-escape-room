@@ -68,6 +68,8 @@ class GameConfig(BaseModel):
     default_time_min: int = settings.DEFAULT_TIME_MIN
     hint_penalty_sec: int = settings.HINT_PENALTY_SEC
     ai_provider: str = settings.AI_PROVIDER
+    ai_random_rooms: bool = settings.ai_random_rooms   # 게임마다 AI 가 문제를 새로 만드는가
+    ai_wait_sec: int = int(settings.AI_TIMEOUT_SEC)     # 방 생성 최대 대기 시간 (로비 안내용)
 
 
 class CreateSessionRequest(BaseModel):
@@ -117,6 +119,7 @@ class SessionRoomPublic(BaseModel):
     puzzle_solved: bool
     status: RoomStatus
     is_final: bool
+    ai_generated: bool = False   # AI 가 이 게임용으로 새로 만든 방
     hint_count: int
     cleared_by: Optional[str] = None
     cleared_at: Optional[str] = None

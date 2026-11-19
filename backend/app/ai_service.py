@@ -6,6 +6,7 @@
 
 새 LLM 을 붙이려면 AIProvider 를 상속해 complete() 만 구현하면 된다.
 """
+import asyncio
 import json
 import logging
 import random
@@ -85,7 +86,7 @@ _PROVIDERS: dict[str, type[AIProvider]] = {"claude": ClaudeProvider, "gemini": G
 def get_provider() -> AIProvider | None:
     """실제 LLM provider. 키가 없으면 None → mock 사용."""
     cls = _PROVIDERS.get(settings.AI_PROVIDER)
-    if cls and settings.AI_API_KEY:
+    if cls and settings.ai_enabled:
         return cls()
     return None
 
@@ -259,3 +260,79 @@ async def generate_hint(room: dict, level: int) -> tuple[str, str]:
         except Exception as e:  # noqa: BLE001
             log.warning("AI hint failed, fallback to mock: %s", e)
     return mock_hint(room, level), "mock"
+
+
+# =====================================================================
+# 게임마다 새 문제 (AI_RANDOM_ROOMS)
+# =====================================================================
+# 가구·단말기·문과 겹치지 않는 단서 자리 (mock 생성기와 같은 안전한 위치)
+_SAFE_SPOTS = [[-3.0, 2.4], [3.0, 2.2], [-4.2, -2.6], [2.8, -2.2], [0.0, 2.8]]
+_PUZZLE_KINDS = ["code", "cipher", "math", "riddle", "logic"]
+
+
+def _sanitize_session_room(draft: dict, base: dict, is_final: bool) -> dict:
+    """AI 초안을 실제 게임에 넣을 수 있게 정리. 쓸 수 없으면 ValueError → 그 방은 기본 방 사용."""
+    room = RoomDraft(**draft).model_dump()
+    if not room["answer"].strip() and not room.get("minigame"):
+        raise ValueError("정답도 미니게임도 없는 방")
+    if room["answer"].strip() and not room["clues"]:
+        raise ValueError("단서 없는 퍼즐")
+    # 단서: 최대 4개, id 중복 제거, 위치는 안전한 자리에 다시 배치 (AI 좌표는 가구와 겹칠 수 있음)
+    spots = random.sample(_SAFE_SPOTS, k=len(_SAFE_SPOTS))
+    clues, seen = [], set()
+    for i, c in enumerate(room["clues"][:4]):
+        cid = re.sub(r"[^a-z0-9_]", "", c["id"].lower()) or f"clue{i}"
+        while cid in seen:
+            cid += "x"
+        seen.add(cid)
+        clues.append({**c, "id": cid, "pos": spots[i]})
+    room["clues"] = clues
+    if not room["hints"]:
+        room["hints"] = base["hints"][:1] or ["방 안의 단서를 다시 살펴보세요."]
+    # 최종 방은 기본 방처럼 미니게임 → 열쇠 → 문 흐름을 유지
+    if is_final and not room.get("minigame") and base.get("minigame"):
+        room["minigame"] = base["minigame"]
+    return room
+
+
+async def _generate_one(provider: AIProvider, theme: dict, base: dict, slot: int, is_final: bool, kind: str) -> dict:
+    request = (
+        f"이번 게임만을 위한 새로운 방입니다. 기존 '{base['name']}' 과는 다른 소재와 퍼즐을 쓰세요. "
+        f"퍼즐 유형은 '{kind}' 로 하세요. (변화용 번호 {random.randint(1000, 9999)})"
+    )
+    user = load_prompt("generate_room").format(
+        theme_name=theme["name"],
+        theme_description=theme["description"],
+        order_label=ORDER_LABELS[-1] if is_final else ORDER_LABELS[min(base["order_idx"], len(ORDER_LABELS) - 2)],
+        prompt=request,
+    )
+    text = await provider.complete(load_prompt("system"), user, max_tokens=1500)
+    return _sanitize_session_room(_extract_json(text), base, is_final)
+
+
+async def generate_session_rooms(theme: dict, rooms: list[dict]) -> dict[int, dict]:
+    """게임 시작 시 각 방의 문제를 AI 로 새로 만든다 (동시에 요청).
+    {slot: 방 내용} 반환. 실패한 방은 빠지며, 그 방은 테마의 기본 방으로 진행된다."""
+    provider = get_provider()
+    if not provider or not settings.AI_RANDOM_ROOMS:
+        return {}
+    kinds = random.sample(_PUZZLE_KINDS, k=len(_PUZZLE_KINDS))  # 방마다 다른 퍼즐 유형
+    last = len(rooms) - 1
+    tasks = {
+        asyncio.create_task(_generate_one(provider, theme, base, slot, slot == last, kinds[slot % len(kinds)])): slot
+        for slot, base in enumerate(rooms)
+    }
+    # 전체 대기 시간 상한: 늦은 방만 기본 방으로 두고, 먼저 끝난 방은 그대로 사용
+    done, pending = await asyncio.wait(tasks, timeout=settings.AI_TIMEOUT_SEC)
+    for t in pending:
+        t.cancel()
+        log.warning("AI session room %d timed out → 기본 방 사용", tasks[t])
+    out: dict[int, dict] = {}
+    for t in done:
+        slot = tasks[t]
+        if t.exception():
+            log.warning("AI session room %d failed → 기본 방 사용: %s", slot, t.exception())
+        else:
+            out[slot] = t.result()
+    log.info("AI session rooms: %d/%d 개 새로 생성 (%s)", len(out), len(rooms), provider.name)
+    return out

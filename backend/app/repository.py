@@ -117,7 +117,12 @@ def update_room(room_id: int, fields: dict) -> None:
 
 
 # ---------- Sessions ----------
-def create_session(session_id: str, theme_id: int, room_ids: list[int], time_limit_min: int, status: str = "playing") -> None:
+def create_session(
+    session_id: str, theme_id: int, room_ids: list[int], time_limit_min: int, status: str = "playing",
+    room_overrides: Optional[dict[int, dict]] = None,
+) -> None:
+    """room_overrides: {slot: AI 가 이 게임용으로 만든 방 내용} → session_rooms.room_json 에 저장"""
+    room_overrides = room_overrides or {}
     with get_conn() as c:
         c.execute(
             """INSERT INTO game_sessions (id, theme_id, room_count, time_limit_min, started_at, status)
@@ -125,10 +130,22 @@ def create_session(session_id: str, theme_id: int, room_ids: list[int], time_lim
             (session_id, theme_id, len(room_ids), time_limit_min, now_iso(), status),
         )
         for slot, room_id in enumerate(room_ids):
+            override = room_overrides.get(slot)
             c.execute(
-                "INSERT INTO session_rooms (session_id, slot, room_id, status) VALUES (?, ?, ?, ?)",
-                (session_id, slot, room_id, "unlocked" if slot == 0 else "locked"),
+                "INSERT INTO session_rooms (session_id, slot, room_id, status, room_json) VALUES (?, ?, ?, ?, ?)",
+                (
+                    session_id, slot, room_id, "unlocked" if slot == 0 else "locked",
+                    json.dumps(override, ensure_ascii=False) if override else None,
+                ),
             )
+
+
+def get_session_room(slot_row: dict) -> dict:
+    """세션의 한 칸에 실제로 배치된 방. AI 가 이 게임용으로 만든 내용이 있으면 그것을 쓴다."""
+    room = get_room(slot_row["room_id"])
+    if slot_row.get("room_json"):
+        room = {**room, **json.loads(slot_row["room_json"]), "source": "ai_session"}
+    return room
 
 
 def get_session(session_id: str) -> Optional[dict]:

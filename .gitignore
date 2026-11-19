@@ -10,3 +10,5 @@ __pycache__/
 # node
 node_modules/
 dist/
+# start.bat 서버 로그
+logs/

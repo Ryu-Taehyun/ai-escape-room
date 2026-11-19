@@ -42,9 +42,16 @@ def list_themes():
 
 
 @router.post("/sessions", response_model=SessionState)
-def create_session(body: CreateSessionRequest):
+async def create_session(body: CreateSessionRequest):
     try:
-        sid = game_logic.create_session(body.theme_key, body.room_count, body.time_limit_min, body.start_now)
+        theme, rooms = game_logic.plan_session(body.theme_key, body.room_count, body.time_limit_min)
+        # API 키가 있으면 이번 게임의 방 문제를 AI 가 새로 만든다 (실패한 방은 테마의 기본 방)
+        overrides = await ai_service.generate_session_rooms(theme, rooms) if settings.ai_random_rooms else {}
+        sid = game_logic.create_session(
+            body.theme_key, body.room_count, body.time_limit_min, body.start_now, overrides
+        )
+        if overrides:
+            repo.add_log("ai", "session", sid, {"action": "random_rooms", "slots": sorted(overrides)})
         return game_logic.get_state(sid)
     except GameError as e:
         _raise(e)

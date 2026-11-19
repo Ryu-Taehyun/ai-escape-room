@@ -88,6 +88,7 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
   const [myYaw, setMyYaw] = useState(0);
   const [pointerLocked, setPointerLocked] = useState(false);
   const [started, setStarted] = useState(false);
+  const aiNoticeRef = useRef('');
   const [loading, setLoading] = useState(true);
   const [focus, setFocus] = useState<InteractTarget | null>(null);
   const [modal, setModal] = useState<Modal>(null);
@@ -156,6 +157,14 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
   }, [refresh]);
 
   const remaining = useCountdown(state, refresh);
+
+  // 처음 입장했을 때 한 번: 이번 게임의 방 중 AI 가 새로 만든 방 안내
+  useEffect(() => {
+    if (!started || !state || aiNoticeRef.current === state.id) return;
+    aiNoticeRef.current = state.id;
+    const made = state.rooms.filter((r) => r.ai_generated).length;
+    if (made > 0) showToast(`🎲 이번 게임의 방 ${made}/${state.rooms.length}개는 AI가 새로 만들었어요`, 'info');
+  }, [started, state, showToast]);
 
   // ---- 협동 소켓 ----
   const myIdRef = useRef('');
