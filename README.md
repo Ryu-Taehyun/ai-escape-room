@@ -9,7 +9,7 @@ AI가 만든 퍼즐을 3D 1인칭으로 풀고 제한 시간 안에 탈출하는
 | 3D 엔진 | JavaScript + Three.js (`frontend/src/game/engine.js`) |
 | 백엔드 | Python FastAPI + WebSocket |
 | DB | SQLite (테마/방 편집, AI 편집 이력, 세션) |
-| AI | `mock`(기본, API 키 불필요) / `claude`(키 입력 시) |
+| AI | `mock`(기본, API 키 불필요) / `claude` / `gemini`(키 입력 시, Gemini 는 무료 키 가능) |
 
 ---
 
@@ -40,12 +40,12 @@ npm run dev
 ### 환경 변수 (`.env`)
 | 파일 | 키 | 설명 |
 |---|---|---|
-| `backend/.env` | `AI_PROVIDER` | `mock`(현재) / `claude` |
+| `backend/.env` | `AI_PROVIDER` | `mock`(현재) / `claude` / `gemini` |
 | | `HINT_PENALTY_SEC` | 힌트 1회당 줄어드는 시간(초), 기본 60 · 0 이면 감점 없음 |
 | | `ADMIN_TOKEN_TTL_SEC` | 관리자 로그인 유지 시간(초), 기본 2시간 |
 | | `SESSION_KEEP_HOURS` | 이보다 오래된 게임 세션은 서버 시작 시 삭제, 기본 24 |
-| | `AI_API_KEY` | 비워둠. 나중에 키를 넣고 `AI_PROVIDER=claude` 로 변경 |
-| | `AI_MODEL` | 기본 `claude-sonnet-5-5` |
+| | `AI_API_KEY` | 비워둠. 키를 넣고 `AI_PROVIDER` 를 `claude` / `gemini` 로 변경 |
+| | `AI_MODEL` | 비우면 claude → `claude-sonnet-5-5`, gemini → `gemini-2.5-flash` |
 | | `ADMIN_PASSWORD` | 인게임 관리자 비밀번호 — **반드시 변경** (기본값이면 서버 시작 시 경고, 관리자 로그인 시 안내) |
 | | `DATABASE_PATH`, `CORS_ORIGINS` | DB 경로, 허용 프론트 주소 |
 | `frontend/.env` | `VITE_API_URL`, `VITE_WS_URL` | 비우면 프록시 사용. 배포 시에만 입력 |
@@ -277,7 +277,7 @@ ai-escape-room/
 
 - 현재 `AI_PROVIDER=mock`: 카이사르 암호·수열·수수께끼·색 코드 퍼즐을 규칙 기반으로 생성하며, **퍼즐 정보를 2~3개 단서로 나누고** 50% 확률(최종 방은 항상)로 미니게임을 붙입니다. 힌트는 DB 힌트 → "정답 N글자, ○로 시작" 순.
 - 실제 LLM 은 `prompts/generate_room.txt` 의 JSON 형식(단서·미니게임 포함)으로 방을 만들고, 형식이 틀리면 mock 으로 대체됩니다.
-- 실제 LLM 연결: `backend/.env` 에서 `AI_PROVIDER=claude`, `AI_API_KEY=...` 입력. 호출이 실패하면 자동으로 mock 으로 대체되어 게임은 멈추지 않습니다.
+- 실제 LLM 연결: `backend/.env` 에서 `AI_PROVIDER=claude` 또는 `gemini`, `AI_API_KEY=...` 입력 (Gemini 무료 키는 Google AI Studio 에서 발급). 호출이 실패하면 자동으로 mock 으로 대체되어 게임은 멈추지 않습니다.
 - 다른 LLM 사용 시 `ai_service.py` 의 `AIProvider.complete()` 만 구현하면 됩니다.
 - 프롬프트 수정은 `backend/app/prompts/*.txt` 에서 (코드 수정 불필요).
 
