@@ -7,6 +7,7 @@ cd /d "%~dp0"
 set "BACK=%~dp0backend"
 set "FRONT=%~dp0frontend"
 set "URL=http://localhost:5173"
+set "LOGS=%~dp0logs"
 
 echo.
 echo  ==============================================
@@ -69,27 +70,44 @@ if not "%NPM_ERR%"=="0" goto :fail
 copy /y "%FRONT%\package-lock.json" "%FRONT%\node_modules\.lock.stamp" >nul
 :npm_ok
 
-rem ---------- 4. 서버 실행 (각각 새 창) ----------
-echo  [4/4] 서버를 켜는 중...
+rem ---------- 4. 서버 실행 (창 없이 백그라운드) ----------
+rem 서버 출력은 logs\backend.log, logs\frontend.log 에 저장된다
+echo  [4/4] 서버를 백그라운드로 켜는 중...
+if not exist "%LOGS%" mkdir "%LOGS%"
+rem 로그 파일의 한글이 깨지지 않도록 파이썬 출력을 UTF-8 로
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
+
+set "BPID="
 netstat -ano | findstr /r /c:":8000 .*LISTENING" >nul
-if errorlevel 1 (
-  start "AI Escape Room - backend :8000" /d "%BACK%" cmd /k .venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
-) else (
-  echo  - 8000 포트가 이미 사용 중이라 백엔드는 이미 켜져 있다고 보고 넘어갑니다.
-)
+if errorlevel 1 goto :start_back
+echo  - 8000 포트가 이미 사용 중이라 백엔드는 이미 켜져 있다고 보고 넘어갑니다.
+goto :back_started
+:start_back
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c .venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000 > ..\logs\backend.log 2>&1' -WorkingDirectory '%BACK%' -WindowStyle Hidden -PassThru; $p.Id" > "%LOGS%\backend.pid"
+if errorlevel 1 goto :fail
+set /p BPID=<"%LOGS%\backend.pid"
+:back_started
+
+set "FPID="
 netstat -ano | findstr /r /c:":5173 .*LISTENING" >nul
-if errorlevel 1 (
-  start "AI Escape Room - frontend :5173" /d "%FRONT%" cmd /k npm run dev -- --strictPort
-) else (
-  echo  - 5173 포트가 이미 사용 중이라 프론트엔드는 이미 켜져 있다고 보고 넘어갑니다.
-)
+if errorlevel 1 goto :start_front
+echo  - 5173 포트가 이미 사용 중이라 프론트엔드는 이미 켜져 있다고 보고 넘어갑니다.
+goto :front_started
+:start_front
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c npm run dev -- --strictPort > ..\logs\frontend.log 2>&1' -WorkingDirectory '%FRONT%' -WindowStyle Hidden -PassThru; $p.Id" > "%LOGS%\frontend.pid"
+if errorlevel 1 goto :fail
+set /p FPID=<"%LOGS%\frontend.pid"
+:front_started
 
 rem ---------- 5. 준비되면 브라우저 열기 ----------
 where curl >nul 2>nul
 if errorlevel 1 goto :no_curl
 echo  서버가 준비되길 기다리는 중...
-call :wait_for http://127.0.0.1:8000/api/health
-call :wait_for %URL%
+call :wait_for http://127.0.0.1:8000/api/health "%BPID%" backend
+if errorlevel 1 goto :fail
+call :wait_for %URL% "%FPID%" frontend
+if errorlevel 1 goto :fail
 goto :open
 :no_curl
 timeout /t 8 /nobreak >nul
@@ -98,8 +116,9 @@ timeout /t 8 /nobreak >nul
 start "" "%URL%"
 echo.
 echo  게임 주소: %URL%
-echo  서버를 끄려면 stop.bat 을 실행하거나, 백엔드/프론트엔드 창을 닫으세요.
-echo  이 창은 닫아도 됩니다.
+echo  서버는 창 없이 백그라운드에서 돌아가요. 이 창은 닫아도 됩니다.
+echo  서버 로그: logs\backend.log, logs\frontend.log
+echo  서버를 끄려면 stop.bat 을 실행하세요.
 echo.
 timeout /t 10 >nul
 exit /b 0
@@ -110,18 +129,33 @@ rem ================= 함수 =================
 %PY% -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>nul
 exit /b %errorlevel%
 
+rem :wait_for 주소 프로세스번호 이름  - 응답할 때까지 최대 60초 대기, 서버가 죽으면 바로 실패
 :wait_for
 set /a TRIES=0
 :wait_loop
 curl -s -o nul "%~1" >nul 2>nul
 if not errorlevel 1 exit /b 0
+if "%~2"=="" goto :wait_next
+tasklist /fi "PID eq %~2" /nh 2>nul | findstr /c:" %~2 " >nul
+if errorlevel 1 goto :wait_dead
+:wait_next
 set /a TRIES+=1
-if %TRIES% geq 60 (
-  echo  - %~1 이 60초 안에 응답하지 않았어요. 서버 창의 오류를 확인하세요.
-  exit /b 1
-)
+if %TRIES% geq 60 goto :wait_timeout
 timeout /t 1 /nobreak >nul
 goto :wait_loop
+:wait_dead
+echo.
+echo  [오류] %~3 서버가 시작하다가 종료됐어요. logs\%~3.log 마지막 부분:
+echo  ----------------------------------------------
+powershell -NoProfile -Command "Get-Content -Path '%LOGS%\%~3.log' -Tail 20 -Encoding UTF8"
+echo  ----------------------------------------------
+call "%~dp0stop.bat" quiet
+exit /b 1
+:wait_timeout
+echo.
+echo  [오류] %~3 서버가 60초 안에 응답하지 않았어요. logs\%~3.log 를 확인하세요.
+call "%~dp0stop.bat" quiet
+exit /b 1
 
 :fail
 echo.
