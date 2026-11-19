@@ -840,3 +840,4 @@ button.big { font-size: 1.2em; padding: 10px 32px; }
 .panel.pause .pm-toggle > input[type='checkbox'] { width: auto !important; flex: none; margin: 4px 0 0; }
 .pm-toggle span { flex: 1; min-width: 0; }
 .pause-foot button:first-child { margin-right: auto; }
+.pz-penalty { opacity: 0.75; font-size: 0.8em; }

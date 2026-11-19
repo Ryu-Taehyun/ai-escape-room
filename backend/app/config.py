@@ -36,6 +36,13 @@ class Settings:
     MAX_TIME_MIN: int = 120
     DEFAULT_TIME_MIN: int = 60
     ROOMS_PER_THEME: int = 5  # 테마마다 5개 방을 보유, 세션은 그 중 2~5개를 사용
+    HINT_PENALTY_SEC: int = int(os.getenv("HINT_PENALTY_SEC", "60"))  # 힌트 1회당 줄어드는 시간 (0 = 감점 없음)
+    ADMIN_TOKEN_TTL_SEC: int = int(os.getenv("ADMIN_TOKEN_TTL_SEC", str(2 * 60 * 60)))  # 관리자 로그인 유지 시간
+    SESSION_KEEP_HOURS: int = int(os.getenv("SESSION_KEEP_HOURS", "24"))  # 이보다 오래된 세션은 서버 시작 시 삭제
+
+    @property
+    def admin_password_is_default(self) -> bool:
+        return self.ADMIN_PASSWORD in ("admin1234", "change-me", "")
 
 
 settings = Settings()

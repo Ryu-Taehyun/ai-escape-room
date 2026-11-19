@@ -66,6 +66,7 @@ class GameConfig(BaseModel):
     min_time_min: int = settings.MIN_TIME_MIN
     max_time_min: int = settings.MAX_TIME_MIN
     default_time_min: int = settings.DEFAULT_TIME_MIN
+    hint_penalty_sec: int = settings.HINT_PENALTY_SEC
     ai_provider: str = settings.AI_PROVIDER
 
 
@@ -188,6 +189,7 @@ class HintResponse(BaseModel):
     level: int
     total: int
     source: str
+    penalty_sec: int = 0
 
 
 # ---------- 관리자 ----------
@@ -197,6 +199,8 @@ class AdminLoginRequest(BaseModel):
 
 class AdminLoginResponse(BaseModel):
     token: str
+    expires_in: int
+    warning: Optional[str] = None
 
 
 class RoomFull(BaseModel):

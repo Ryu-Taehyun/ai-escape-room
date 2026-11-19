@@ -33,7 +33,7 @@ async def game_socket(websocket: WebSocket, session_id: str, name: str = "Player
 
     player = await manager.connect(sid, websocket, name)
     try:
-        await websocket.send_json({"type": "welcome", "player_id": player.id, "players": manager.players(sid)})
+        await websocket.send_json({"type": "welcome", "player_id": player.id, "name": player.name, "players": manager.players(sid)})
         await manager.broadcast(sid, {"type": "player_joined", "player": player.public()}, exclude=player.id)
         await manager.chat(sid, None, f"{player.name} 님이 입장했습니다.")
 
@@ -68,6 +68,11 @@ async def game_socket(websocket: WebSocket, session_id: str, name: str = "Player
                 pos = _vec3(data.get("position"))
                 if pos is not None:
                     await manager.broadcast(sid, {"type": "mark", "player_id": player.id, "name": player.name, "position": pos})
+            elif kind == "restart":
+                new_sid = str(data.get("session_id", "")).upper()
+                new = repo.get_session(new_sid)
+                if new and new["status"] == "waiting" and new_sid != sid:
+                    await manager.broadcast(sid, {"type": "restart", "session_id": new_sid, "by": player.name}, exclude=player.id)
             elif kind == "ping":
                 await websocket.send_json({"type": "pong"})
     except WebSocketDisconnect:

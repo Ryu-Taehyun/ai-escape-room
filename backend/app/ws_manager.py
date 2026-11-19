@@ -16,10 +16,13 @@
   move {position:[x,y,z], rotation, slot} | chat {text} | ping
   ready {ready}            # 대기실 준비 완료 (모두 준비하면 자동 시작)
   mark {position:[x,y,z]}  # 핑: 바라보는 곳 표시 → 서버가 mark 로 모두에게 전달
+  restart {session_id}     # 결과 화면 "다시 하기" → 같은 방 팀원도 새 방으로 이동
 
 서버 → 클라이언트 (추가)
   lobby   {players}        # 대기실 준비 상태
   mark    {player_id, name, position}
+  restart {session_id, by}
+  welcome 에는 서버가 정한 내 이름(name, 중복 시 번호 붙음)도 들어 있다
 """
 import asyncio
 import secrets
@@ -50,9 +53,17 @@ class ConnectionManager:
 
     async def connect(self, session_id: str, ws: WebSocket, name: str) -> Player:
         await ws.accept()
-        player = Player(id=secrets.token_hex(4), name=name[:20] or "Player", ws=ws)
         async with self._lock:
-            self.sessions.setdefault(session_id, {})[player.id] = player
+            room = self.sessions.setdefault(session_id, {})
+            # 같은 방에 같은 닉네임이 있으면 "(2)" 처럼 번호를 붙인다 (기록·핑 구분용)
+            base = (name.strip() or "Player")[:20]
+            taken = {p.name for p in room.values()}
+            unique, n = base, 1
+            while unique in taken:
+                n += 1
+                unique = f"{base} ({n})"
+            player = Player(id=secrets.token_hex(4), name=unique, ws=ws)
+            room[player.id] = player
         return player
 
     async def disconnect(self, session_id: str, player_id: str) -> None:

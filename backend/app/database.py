@@ -121,6 +121,11 @@ def init_db() -> None:
             _seed(conn)
         else:
             _refresh_seed_rooms(conn)
+    # 순환 import 방지를 위해 여기서 불러온다
+    from .repository import cleanup_sessions
+    removed = cleanup_sessions(settings.SESSION_KEEP_HOURS)
+    if removed:
+        print(f"[db] 오래된 세션 {removed}개 정리")
 
 
 def _columns(conn: sqlite3.Connection, table: str) -> set[str]:

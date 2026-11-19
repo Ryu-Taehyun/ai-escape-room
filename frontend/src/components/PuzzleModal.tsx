@@ -15,7 +15,9 @@ interface Props {
   kind: ThemeKind;
   copy: ThemeCopy;
   remaining: number;
+  hintPenalty: number; // 힌트 1회당 줄어드는 시간(초)
   onClose: () => void;
+  onEscape: () => void; // ESC 로 닫기 (재고정 시도 안 함)
   onSolved: () => void;
   onState: (s: SessionState) => void;
   onSound: (name: SfxName) => void;
@@ -23,7 +25,7 @@ interface Props {
 
 type Status = 'idle' | 'busy' | 'denied' | 'granted';
 
-export default function PuzzleModal({ sessionId, room, playerName, disabled, kind, copy, remaining, onClose, onSolved, onState, onSound }: Props) {
+export default function PuzzleModal({ sessionId, room, playerName, disabled, kind, copy, remaining, hintPenalty, onClose, onEscape, onSolved, onState, onSound }: Props) {
   const [answer, setAnswer] = useState('');
   const [status, setStatus] = useState<Status>('idle');
   const [message, setMessage] = useState('');
@@ -152,7 +154,7 @@ export default function PuzzleModal({ sessionId, room, playerName, disabled, kin
                   disabled={disabled || status === 'busy'}
                   onChange={(e) => setAnswer(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Escape') onClose();
+                    if (e.key === 'Escape') onEscape();
                     else if (e.key.length === 1 && kind === 'horror') onSound('type');
                   }}
                   autoComplete="off"
@@ -161,8 +163,9 @@ export default function PuzzleModal({ sessionId, room, playerName, disabled, kin
                 <button type="submit" className="pz-btn primary" disabled={disabled || status === 'busy'}>
                   {copy.submit}
                 </button>
-                <button type="button" className="pz-btn" disabled={disabled} onClick={hint}>
+                <button type="button" className="pz-btn" disabled={disabled} onClick={hint} title={hintPenalty ? `힌트 1회당 제한 시간 ${hintPenalty}초 감소` : undefined}>
                   {copy.hint}
+                  {hintPenalty > 0 && <small className="pz-penalty"> −{hintPenalty >= 60 ? `${Math.round(hintPenalty / 60)}분` : `${hintPenalty}초`}</small>}
                 </button>
               </form>
             )

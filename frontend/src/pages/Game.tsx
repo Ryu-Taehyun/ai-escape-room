@@ -100,6 +100,8 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
   const [captions, setCaptions] = useState<Caption[]>([]);
   const [fps, setFps] = useState(0);
   const [restarting, setRestarting] = useState(false);
+  const [showResume, setShowResume] = useState(false); // ESC 로 창을 닫은 뒤: "화면을 클릭하면 계속"
+  const [hintPenalty, setHintPenalty] = useState(0);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<EscapeEngine | null>(null);
@@ -157,21 +159,34 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
   const remaining = useCountdown(state, refresh);
 
   // ---- 협동 소켓 ----
+  const myIdRef = useRef('');
+  const nameRef = useRef(playerName); // 서버가 정한 이름 (중복 닉네임이면 "이름 (2)")
   const onMark = useCallback((m: MarkEvent) => {
-    const mine = m.name === playerName;
+    const mine = m.playerId === myIdRef.current;
     engineRef.current?.addMark(m.position, m.name, mine ? '#ffd54a' : '#4fc3f7');
     const key = Date.now() + Math.random();
     setMarks((list) => [...list, { key, name: m.name, position: m.position }]);
     window.setTimeout(() => setMarks((list) => list.filter((x) => x.key !== key)), MARK_MS);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playerName]);
-  const { players, myId, connected, everConnected, messages, send } = useGameSocket({
+  }, []);
+  const onTeamRestart = useCallback((sid: string, by: string) => {
+    setToast({ key: Date.now(), text: `${by} 님이 같은 설정으로 새 방을 만들었습니다. 함께 이동합니다…`, tone: 'info' });
+    window.setTimeout(() => onRestart(sid), 1500);
+  }, [onRestart]);
+  const { players, myId, myName, connected, everConnected, messages, send } = useGameSocket({
     sessionId,
     playerName,
     onStateChanged: refresh,
     onMark,
+    onRestart: onTeamRestart,
     initialPosition: () => posRef.current,
   });
+  myIdRef.current = myId;
+  nameRef.current = myName || playerName;
+  const me = myName || playerName;
+
+  useEffect(() => {
+    api.config().then((c) => setHintPenalty(c.hint_penalty_sec ?? 0)).catch(() => {});
+  }, []);
 
   // ---- 사운드 ----
   useEffect(() => {
@@ -210,7 +225,7 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
       if (busyRef.current) return;
       busyRef.current = true;
       try {
-        const r = await api.inspectClue(sessionId, t.slot, t.id!, playerName);
+        const r = await api.inspectClue(sessionId, t.slot, t.id!, nameRef.current);
         applyState(r.state);
         sound('clue');
         showClue({ key: `${t.slot}:${t.id}:${Date.now()}`, label: r.clue.label, text: r.clue.text, object: r.clue.object, isNew: r.new });
@@ -220,7 +235,7 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
         busyRef.current = false;
       }
     },
-    [sessionId, playerName, applyState, sound, showToast, showClue],
+    [sessionId, applyState, sound, showToast, showClue],
   );
 
   const tryDoor = useCallback(
@@ -231,7 +246,7 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
       if (mg && mg.key_obtained && !mg.key_used) {
         busyRef.current = true;
         try {
-          const r = await api.useKey(sessionId, slot, playerName);
+          const r = await api.useKey(sessionId, slot, nameRef.current);
           applyState(r.state);
           sound('key');
           showToast(r.message, 'good');
@@ -248,7 +263,7 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
       sound('locked');
       showToast(missing.length ? `${copy.doorLocked} — 필요한 것: ${missing.join(', ')}` : copy.doorLocked, 'bad');
     },
-    [sessionId, playerName, applyState, sound, showToast, copy],
+    [sessionId, applyState, sound, showToast, copy],
   );
 
   const openModal = useCallback(
@@ -262,15 +277,34 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
     [sound],
   );
 
-  /** 창을 닫고 곧바로 조작으로 복귀. 브라우저가 거부하면 일시정지 메뉴(계속하기 버튼)로 */
+  /**
+   * 창을 닫고 곧바로 조작으로 복귀 (버튼 클릭·Enter·I/M 키처럼 브라우저가 재고정을 허용하는 입력 직후).
+   * Chrome 은 ESC 로 고정을 푼 직후 약 1초간 재고정을 거부하므로 한 번 더 시도하고,
+   * 그래도 안 되면 메뉴를 띄우지 않고 작은 안내만 보여 준다 (다음 클릭으로 바로 이어짐).
+   */
   const closeAndResume = useCallback(() => {
     setModal(null);
     const eng = engineRef.current;
     if (!eng || stateRef.current?.status !== 'playing') return;
     eng.setInputEnabled(true);
     eng.lock().then((ok) => {
-      if (!ok && !modalRef.current) setModal({ kind: 'pause' });
+      if (ok) return;
+      window.setTimeout(() => {
+        if (modalRef.current || engineRef.current !== eng) return;
+        eng.lock().then((ok2) => {
+          if (!ok2 && !modalRef.current) setShowResume(true);
+        });
+      }, 1100);
     });
+  }, []);
+
+  /** ESC 로 창 닫기: ESC 는 브라우저가 재고정을 허용하지 않는 키라 시도하지 않는다 (→ 일시정지 메뉴가 뜨던 버그) */
+  const closeOnly = useCallback(() => {
+    setModal(null);
+    if (stateRef.current?.status === 'playing') {
+      engineRef.current?.setInputEnabled(true);
+      setShowResume(true);
+    }
   }, []);
 
   const pointerLockedRef = useRef(false);
@@ -300,7 +334,9 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
     let cancelled = false;
     let engine: EscapeEngine | null = null;
     setLoading(true);
-    const fonts = document.fonts?.ready ?? Promise.resolve();
+    const fonts = document.fonts
+      ? Promise.all(['150px "East Sea Dokdo"', '44px "Song Myung"', '14px "Nanum Gothic Coding"'].map((f) => document.fonts.load(f).catch(() => []))).then(() => document.fonts.ready)
+      : Promise.resolve();
     Promise.race([fonts, new Promise((r) => setTimeout(r, 2500))])
       .then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
       .then(() => {
@@ -324,6 +360,7 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
             setPointerLocked(locked);
             if (locked) {
               setStarted(true);
+              setShowResume(false);
               audioRef.current?.start();
               if (modalRef.current?.kind === 'pause') setModal(null);
             } else if (ownUnlockRef.current) {
@@ -390,7 +427,16 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
         if (cur?.kind === k) closeAndResume();
         else if (!cur || cur.kind === 'map' || cur.kind === 'inventory') openModal({ kind: k });
       }
-      if (e.code === 'Escape' && cur && cur.kind !== 'admin' && cur.kind !== 'minigame') closeAndResume();
+      if (e.code === 'Escape') {
+        // 창이 열려 있으면 닫기만, 창 없이 마우스가 풀린 상태면 일시정지 메뉴
+        if (cur) {
+          if (cur.kind !== 'admin' && cur.kind !== 'minigame') closeOnly();
+        } else if (!pointerLockedRef.current && stateRef.current?.status === 'playing' && startedRef.current) {
+          setShowResume(false);
+          setModal({ kind: 'pause' });
+        }
+        return;
+      }
       if (!cur && pointerLockedRef.current) {
         if (e.code === 'Enter') {
           e.preventDefault();
@@ -406,7 +452,9 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [openModal, closeAndResume]);
+  }, [openModal, closeAndResume, closeOnly]);
+  const startedRef = useRef(false);
+  startedRef.current = started;
   const lastClueRef = useRef<ClueDocData | null>(null);
   lastClueRef.current = lastClue;
 
@@ -415,6 +463,7 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
     setRestarting(true);
     try {
       const s = await api.createSession(state.theme.key, state.room_count, state.time_limit_min);
+      send({ type: 'restart', session_id: s.id }); // 같은 방 팀원도 새 방으로
       onRestart(s.id);
     } catch (e) {
       showToast((e as Error).message, 'bad');
@@ -508,6 +557,7 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
         </div>
       </div>
 
+      {showResume && !modal && !pointerLocked && status === 'playing' && <div className="resume-hint">{copy.resumeHint}</div>}
       {everConnected && !connected && <div className="conn-banner">서버와 연결이 끊겼습니다 — 다시 연결하는 중…</div>}
       {loading && !waiting && (
         <div className="loading-screen">
@@ -590,7 +640,7 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
         />
       )}
       {modal?.kind === 'map' && (
-        <MiniMap rooms={state.rooms} currentSlot={currentSlot} myPos={myPos} myName={playerName} players={others} marks={marks} title={copy.mapTitle} onClose={closeAndResume} />
+        <MiniMap rooms={state.rooms} currentSlot={currentSlot} myPos={myPos} myName={me} players={others} marks={marks} title={copy.mapTitle} onClose={closeAndResume} />
       )}
       {modal?.kind === 'inventory' && <InventoryPanel state={state} title={copy.inventoryTitle} empty={copy.inventoryEmpty} onClose={closeAndResume} />}
       {modal?.kind === 'puzzle' && modalRoom && (
@@ -598,11 +648,13 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
           key={modalRoom.slot}
           sessionId={sessionId}
           room={modalRoom}
-          playerName={playerName}
+          playerName={me}
           disabled={ended}
           kind={kind}
           copy={copy}
           remaining={remaining}
+          hintPenalty={hintPenalty}
+          onEscape={closeOnly}
           onClose={closeAndResume}
           onSolved={closeAndResume}
           onState={applyState}
@@ -615,10 +667,11 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
             key={modalRoom.slot}
             sessionId={sessionId}
             room={modalRoom}
-            playerName={playerName}
+            playerName={me}
             disabled={ended}
             kind={kind}
             copy={copy}
+            onEscape={closeOnly}
             onClose={closeAndResume}
             onDone={closeAndResume}
             onState={applyState}
