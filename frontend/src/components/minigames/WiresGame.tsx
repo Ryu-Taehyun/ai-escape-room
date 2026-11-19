@@ -7,6 +7,8 @@ interface Props {
 }
 
 const ROW = 56;
+/** 색약 대응: 같은 색 단자에 같은 기호 */
+const MARKS = ['▲', '●', '■', '◆', '★', '✚'];
 const W = 320;
 
 export default function WiresGame({ params, onDone }: Props) {
@@ -55,7 +57,7 @@ export default function WiresGame({ params, onDone }: Props) {
   return (
     <div className="mg-wires">
       <p className="muted">
-        같은 색끼리 연결하세요. 남은 시간 <b className={remain <= 10 ? 'error' : ''}>{remain}초</b>
+        같은 색(같은 기호)끼리 연결하세요. 남은 시간 <b className={remain <= 10 ? 'error' : ''}>{remain}초</b>
       </p>
       <svg width={W} height={height} className="wires-svg">
         {Object.entries(pairs).map(([l, r]) => (
@@ -64,6 +66,7 @@ export default function WiresGame({ params, onDone }: Props) {
         {left.map((c, i) => (
           <g key={`l${i}`} onClick={() => setPicked(i)} style={{ cursor: 'pointer' }}>
             <rect x={0} y={y(i) - 10} width={30} height={20} fill={c} rx={4} />
+            <text x={15} y={y(i) + 5} textAnchor="middle" className="wire-mark">{MARKS[i % MARKS.length]}</text>
             <circle cx={40} cy={y(i)} r={picked === i ? 12 : 9} fill={c} stroke="#fff" strokeWidth={picked === i ? 3 : 1} />
           </g>
         ))}
@@ -71,6 +74,7 @@ export default function WiresGame({ params, onDone }: Props) {
           <g key={`r${i}`} onClick={() => clickRight(i)} style={{ cursor: picked === null ? 'default' : 'pointer' }}>
             <circle cx={W - 40} cy={y(i)} r={9} fill={c} stroke="#fff" strokeWidth={1} />
             <rect x={W - 30} y={y(i) - 10} width={30} height={20} fill={c} rx={4} />
+            <text x={W - 15} y={y(i) + 5} textAnchor="middle" className="wire-mark">{MARKS[Math.max(0, left.indexOf(c)) % MARKS.length]}</text>
           </g>
         ))}
       </svg>

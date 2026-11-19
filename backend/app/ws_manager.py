@@ -14,6 +14,12 @@
 
 클라이언트 → 서버
   move {position:[x,y,z], rotation, slot} | chat {text} | ping
+  ready {ready}            # 대기실 준비 완료 (모두 준비하면 자동 시작)
+  mark {position:[x,y,z]}  # 핑: 바라보는 곳 표시 → 서버가 mark 로 모두에게 전달
+
+서버 → 클라이언트 (추가)
+  lobby   {players}        # 대기실 준비 상태
+  mark    {player_id, name, position}
 """
 import asyncio
 import secrets
@@ -31,9 +37,10 @@ class Player:
     position: list[float] = field(default_factory=lambda: [0.0, 1.6, 3.0])
     rotation: float = 0.0
     slot: int = 0
+    ready: bool = False
 
     def public(self) -> dict:
-        return {"id": self.id, "name": self.name, "position": self.position, "rotation": self.rotation, "slot": self.slot}
+        return {"id": self.id, "name": self.name, "position": self.position, "rotation": self.rotation, "slot": self.slot, "ready": self.ready}
 
 
 class ConnectionManager:

@@ -117,12 +117,12 @@ def update_room(room_id: int, fields: dict) -> None:
 
 
 # ---------- Sessions ----------
-def create_session(session_id: str, theme_id: int, room_ids: list[int], time_limit_min: int) -> None:
+def create_session(session_id: str, theme_id: int, room_ids: list[int], time_limit_min: int, status: str = "playing") -> None:
     with get_conn() as c:
         c.execute(
             """INSERT INTO game_sessions (id, theme_id, room_count, time_limit_min, started_at, status)
-               VALUES (?, ?, ?, ?, ?, 'playing')""",
-            (session_id, theme_id, len(room_ids), time_limit_min, now_iso()),
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (session_id, theme_id, len(room_ids), time_limit_min, now_iso(), status),
         )
         for slot, room_id in enumerate(room_ids):
             c.execute(

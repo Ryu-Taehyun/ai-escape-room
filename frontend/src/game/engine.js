@@ -17,6 +17,13 @@
 // =====================================================================
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { RGBShiftShader } from 'three/addons/shaders/RGBShiftShader.js';
 import * as TX from './textures.js';
 
 export const ROOM_SIZE = 10;
@@ -88,6 +95,13 @@ export class EscapeEngine {
     this.cfg = THEME_CFG[this.kind];
     this.cb = options;
     this.audio = options.audio || null;
+    // 그래픽 품질: low(그림자·후처리 없음) / medium(그림자·외곽선) / high(+빛번짐·색수차)
+    this.quality = options.quality || 'medium';
+    this.baseFov = options.fov || BASE_FOV;
+    this.marks = [];
+    this._fpsFrames = 0;
+    this._fpsTime = 0;
+    this._lastMarkAt = 0;
     this.R = TX.mulberry32(7 + this.rooms.length * 13);
 
     this.inputEnabled = true;
@@ -134,7 +148,7 @@ export class EscapeEngine {
     this.trauma = 0;
     this.rumbleUntil = 0;
     this.fovPunch = 0;
-    this.fov = BASE_FOV;
+    this.fov = options.fov || BASE_FOV;
     this._euler = new THREE.Euler(0, 0, 0, 'YXZ');
     this._q = new THREE.Quaternion();
     this._v = new THREE.Vector3();
@@ -162,15 +176,16 @@ export class EscapeEngine {
     this.scene.add(this.head);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.quality === 'low' ? 1 : this.quality === 'medium' ? 1.5 : 2));
     this.renderer.setSize(w, h);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = this.cfg.exposure;
-    this.renderer.shadowMap.enabled = this.kind === 'horror';
+    this.renderer.shadowMap.enabled = this.kind === 'horror' && this.quality !== 'low';
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
 
     this.controls = new PointerLockControls(this.head, this.renderer.domElement);
+    this.controls.pointerSpeed = options.sensitivity ?? 1;
     this.controls.addEventListener('lock', () => this.cb.onLockChange?.(true));
     this.controls.addEventListener('unlock', () => {
       this.keys.clear();
@@ -187,6 +202,7 @@ export class EscapeEngine {
     if (this.kind === 'egypt') this._buildSandFall();
     this._finalizeShadows();
     this._applyStatuses(true);
+    this._setupComposer(w, h);
     this._bindEvents();
 
     this.clock = new THREE.Clock();
@@ -462,6 +478,8 @@ export class EscapeEngine {
     }
     const light = new THREE.PointLight(0xff8a3a, 7, 10, 1.7);
     light.position.set(x, y + 0.6, z + facing * 0.45);
+    // 저사양: 방마다 횃불 빛은 하나만 (불꽃은 그대로 보임)
+    if (this.quality === 'low' && this.torches.length % 2 === 1) light.visible = false;
     this.scene.add(light);
     this.torches.push({ light, flames, base: 7, phase: this.R() * 10 });
   }
@@ -1105,7 +1123,7 @@ export class EscapeEngine {
 
   _buildDust() {
     const n = this.rooms.length;
-    const count = this.kind === 'egypt' ? 700 : 500;
+    const count = (this.kind === 'egypt' ? 700 : 500) * (this.quality === 'low' ? 0.4 : 1);
     const pos = new Float32Array(count * 3);
     const vel = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
@@ -1199,6 +1217,7 @@ export class EscapeEngine {
       const open = door.isExit ? room?.status === 'cleared' : !!next && next.status !== 'locked';
       if (open && !door.open && !instant) {
         this.audio?.sfx('door');
+        this.cb.onCaption?.(this.kind === 'egypt' ? '[돌문이 갈리며 열린다]' : '[철문이 유압 소리를 내며 열린다]');
         this.addTrauma(this.kind === 'egypt' ? 0.55 : 0.3);
       }
       door.open = open;
@@ -1251,6 +1270,81 @@ export class EscapeEngine {
     return new Promise((resolve) => setTimeout(() => resolve(this.controls.isLocked), 150));
   }
 
+  // ============================================================ 후처리
+  _setupComposer(w, h) {
+    if (this.quality === 'low') return;
+    const composer = new EffectComposer(this.renderer);
+    composer.addPass(new RenderPass(this.scene, this.camera));
+    // 바라보는 물건 외곽선
+    const outline = new OutlinePass(new THREE.Vector2(w, h), this.scene, this.camera);
+    outline.edgeStrength = 3.2;
+    outline.edgeGlow = 0.6;
+    outline.edgeThickness = 1.4;
+    outline.visibleEdgeColor.set(this.kind === 'egypt' ? 0xffd27a : 0xcfe8ff);
+    outline.hiddenEdgeColor.set(0x222222);
+    composer.addPass(outline);
+    this.outline = outline;
+    if (this.quality === 'high') {
+      // 빛번짐: CRT 화면·횃불·비상등
+      composer.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), this.kind === 'egypt' ? 0.45 : 0.6, 0.5, 0.82));
+      if (this.kind === 'horror') {
+        const rgb = new ShaderPass(RGBShiftShader);
+        rgb.uniforms.amount.value = 0.0012;
+        composer.addPass(rgb);
+        this.rgbShift = rgb;
+      }
+    }
+    composer.addPass(new OutputPass());
+    this.composer = composer;
+  }
+
+  // ============================================================ 핑 (Q)
+  _placeMark() {
+    const now = performance.now();
+    if (now - this._lastMarkAt < 800) return;
+    this.head.updateMatrixWorld(true);
+    this.raycaster.setFromCamera(this.center, this.camera);
+    this.raycaster.far = 30;
+    const hits = this.raycaster.intersectObjects(this.scene.children, true);
+    const hit = hits.find((h) => h.object.isMesh && !h.object.userData.isAvatar && !this.stalker?.children.includes(h.object));
+    if (!hit) return;
+    this._lastMarkAt = now;
+    const p = hit.point;
+    this.cb.onMark?.([p.x, p.y, p.z]);
+  }
+
+  /** 핑 표시 (나 또는 팀원). 6초 뒤 사라짐 */
+  addMark(position, name, color = '#ffd54a') {
+    const g = new THREE.Group();
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: this._texture('glow', () => TX.glowSprite()), color, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, transparent: true }));
+    glow.scale.set(0.5, 0.5, 1);
+    glow.renderOrder = 998;
+    const label = makeLabel(`▼ ${name}`, { color, bg: 'rgba(0,0,0,0.55)', width: 1.1 });
+    label.material.depthTest = false;
+    label.renderOrder = 999;
+    label.position.y = 0.45;
+    g.add(glow, label);
+    g.position.set(position[0], position[1] + 0.05, position[2]);
+    this.scene.add(g);
+    // 실제 시각 기준 (백그라운드 탭에서 렌더가 멈췄다 돌아와도 바로 사라지지 않게)
+    const now = performance.now() / 1000;
+    this.marks.push({ g, glow, until: now + 6, born: now });
+    this.audio?.sfx('mark');
+  }
+
+  /** 채팅 입력 등으로 키 입력이 끊길 때 눌린 키를 놓은 것으로 처리 */
+  releaseKeys() {
+    this.keys.clear();
+  }
+
+  setSensitivity(v) {
+    this.controls.pointerSpeed = clamp(v, 0.1, 3);
+  }
+
+  setFov(v) {
+    this.baseFov = clamp(v, 55, 100);
+  }
+
   // ============================================================ 원격 플레이어
   /** @param {import('./engine').RemotePlayerInput[]} players */
   updateRemotePlayers(players) {
@@ -1259,19 +1353,8 @@ export class EscapeEngine {
       seen.add(p.id);
       let g = this.remote.get(p.id);
       if (!g) {
-        g = new THREE.Group();
-        const color = hashColor(p.id);
-        const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 1.0, 4, 10), new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.15, roughness: 0.7 }));
-        body.position.y = 0.8;
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 14, 12), new THREE.MeshStandardMaterial({ color: 0xd8c2a8, roughness: 0.7 }));
-        head.position.y = 1.55;
-        const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), new THREE.MeshBasicMaterial({ color: this.kind === 'egypt' ? 0xffa040 : 0xeef4ff }));
-        lamp.position.set(0.25, 1.25, -0.25);
-        const label = makeLabel(p.name, { width: 1.3 });
-        label.position.y = 2.05;
-        g.add(body, head, lamp, label);
+        g = this._makeAvatar(p);
         g.position.set(p.position[0], 0, p.position[2]);
-        g.userData.dest = new THREE.Vector3();
         this.scene.add(g);
         this.remote.set(p.id, g);
       }
@@ -1280,10 +1363,102 @@ export class EscapeEngine {
     }
     for (const [id, g] of this.remote) {
       if (!seen.has(id)) {
+        if (g.userData.light) this._remoteLights = Math.max(0, (this._remoteLights || 1) - 1);
         this.scene.remove(g);
         this._disposeObject(g);
         this.remote.delete(id);
       }
+    }
+  }
+
+  /** 팀원 캐릭터: 팔다리가 걸음에 맞춰 흔들리고, 손전등(횃불)을 들고 있다. 앞 = -z */
+  _makeAvatar(p) {
+    const g = new THREE.Group();
+    const color = hashColor(p.id);
+    const cloth = new THREE.MeshStandardMaterial({ color, roughness: 0.8 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x1c1d20, roughness: 0.9 });
+    const skin = new THREE.MeshStandardMaterial({ color: 0xd8c2a8, roughness: 0.7 });
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.21, 0.5, 4, 10), cloth);
+    torso.position.y = 1.08;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 14, 12), skin);
+    head.position.y = 1.62;
+    const limb = (len, r, mat, x, y) => {
+      const pivot = new THREE.Group();
+      pivot.position.set(x, y, 0);
+      const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 3, 8), mat);
+      m.position.y = -len / 2 - r;
+      pivot.add(m);
+      g.add(pivot);
+      return pivot;
+    };
+    const legL = limb(0.55, 0.075, dark, -0.1, 0.78);
+    const legR = limb(0.55, 0.075, dark, 0.1, 0.78);
+    const armL = limb(0.45, 0.06, cloth, -0.29, 1.36);
+    const armR = limb(0.45, 0.06, cloth, 0.29, 1.36);
+    armR.rotation.x = -1.1; // 손전등을 앞으로 든 팔
+    g.add(torso, head);
+    // 손전등 빛줄기 (보이는 원뿔) + 고사양이면 실제 조명
+    const egypt = this.kind === 'egypt';
+    const lampColor = egypt ? 0xffa040 : 0xeef4ff;
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), new THREE.MeshBasicMaterial({ color: lampColor }));
+    lamp.position.set(0, -0.62, 0);
+    armR.add(lamp);
+    if (!egypt) {
+      const beam = new THREE.Mesh(
+        new THREE.ConeGeometry(0.75, 4.5, 18, 1, true),
+        new THREE.MeshBasicMaterial({ color: 0xdfe9ff, transparent: true, opacity: 0.05, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+      );
+      beam.rotation.x = Math.PI; // 꼭짓점이 손 쪽
+      beam.position.set(0, -0.62 - 2.25, 0);
+      armR.add(beam);
+    }
+    this._remoteLights = this._remoteLights || 0;
+    if (this.quality !== 'low' && this._remoteLights < 3) {
+      this._remoteLights += 1;
+      const light = egypt ? new THREE.PointLight(0xff9a48, 3, 7, 1.8) : new THREE.SpotLight(0xe6efff, 18, 16, 0.4, 0.5, 1.5);
+      light.position.set(0, -0.62, 0);
+      armR.add(light);
+      if (light.isSpotLight) {
+        light.target.position.set(0, -4, 0);
+        armR.add(light.target);
+      }
+      g.userData.light = light;
+    }
+    const label = makeLabel(p.name, { width: 1.2 });
+    label.position.y = 2.05;
+    g.add(label);
+    g.traverse((o) => (o.userData.isAvatar = true));
+    g.userData.dest = new THREE.Vector3();
+    g.userData.limbs = { legL, legR, armL, armR };
+    g.userData.phase = 0;
+    g.userData.speed = 0;
+    g.userData.torso = torso;
+    g.userData.head = head;
+    return g;
+  }
+
+  _animateAvatars(dt) {
+    for (const g of this.remote.values()) {
+      const before = g.position.clone();
+      g.position.lerp(g.userData.dest, Math.min(1, dt * 8));
+      const moved = before.distanceTo(g.position) / Math.max(dt, 1e-3);
+      g.userData.speed += (moved - g.userData.speed) * Math.min(1, dt * 6);
+      const sp = g.userData.speed;
+      const k = Math.min(1, sp / 3);
+      g.userData.phase += dt * sp * 3.2;
+      const sw = Math.sin(g.userData.phase) * 0.7 * k;
+      const { legL, legR, armL, armR } = g.userData.limbs;
+      legL.rotation.x = sw;
+      legR.rotation.x = -sw;
+      armL.rotation.x = -sw * 0.8;
+      armR.rotation.x = -1.1 + sw * 0.15;
+      g.userData.torso.position.y = 1.08 + Math.abs(Math.sin(g.userData.phase)) * 0.04 * k;
+      g.userData.head.position.y = 1.62 + Math.abs(Math.sin(g.userData.phase)) * 0.04 * k;
+      // 회전은 부드럽게 (최단 경로)
+      const target = g.userData.rotation ?? 0;
+      let d = target - g.rotation.y;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      g.rotation.y += d * Math.min(1, dt * 10);
     }
   }
 
@@ -1302,6 +1477,7 @@ export class EscapeEngine {
         this.handOn = !this.handOn;
         this.audio?.sfx('type');
       }
+      if (e.code === 'KeyQ' && !e.repeat) this._placeMark();
     };
     this._onKeyUp = (e) => this.keys.delete(e.code);
     // Chromium 은 포인터 락 직후 비정상적으로 큰 movementX/Y 를 보내는 경우가 있어 시점이 튄다 → 무시
@@ -1328,6 +1504,7 @@ export class EscapeEngine {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
+    this.composer?.setSize(w, h);
   }
 
   /** 화면 중앙(조준점)에 있는 상호작용 대상. 벽에 가려지면 null */
@@ -1336,9 +1513,13 @@ export class EscapeEngine {
     this.raycaster.setFromCamera(this.center, this.camera);
     this.raycaster.far = INTERACT_DIST;
     const hits = this.raycaster.intersectObjects([...this.interactables, ...this.occluders], true);
+    this._pickObj = null;
     for (const hit of hits) {
       const target = findTarget(hit.object);
       if (!target) return null;
+      let o = hit.object;
+      while (o && !o.userData.target) o = o.parent;
+      this._pickObj = o;
       if (target.kind === 'door') {
         const door = target.slot < this.doors.length ? this.doors[target.slot] : this.exitDoor;
         if (door?.open) return null;
@@ -1437,13 +1618,36 @@ export class EscapeEngine {
     if (this.sparkObj && t > this.sparkObj.next) {
       this.sparkObj.next = t + 2 + this.R() * 5;
       const p = this.sparkObj.group.position;
-      if (Math.hypot(p.x - this.head.position.x, p.z - this.head.position.z) < 6) this.audio?.sfx('spark');
+      if (Math.hypot(p.x - this.head.position.x, p.z - this.head.position.z) < 6) {
+        this.audio?.sfx('spark');
+        this.cb.onCaption?.('[배전반에서 전기가 튄다]');
+      }
     }
 
     // 원격 플레이어
-    for (const g of this.remote.values()) {
-      g.position.lerp(g.userData.dest, Math.min(1, dt * 10));
-      g.rotation.y = g.userData.rotation ?? 0;
+    this._animateAvatars(dt);
+
+    // 핑 표시
+    const wall = performance.now() / 1000;
+    for (let i = this.marks.length - 1; i >= 0; i--) {
+      const mk = this.marks[i];
+      const age = wall - mk.born;
+      const pulse = 0.45 + 0.15 * Math.sin(age * 8);
+      mk.glow.scale.set(pulse, pulse, 1);
+      mk.g.children.forEach((c) => (c.material.opacity = Math.min(1, (mk.until - wall) / 1.2)));
+      if (wall > mk.until) {
+        this.scene.remove(mk.g);
+        mk.g.children.forEach((c) => c.material.dispose());
+        this.marks.splice(i, 1);
+      }
+    }
+
+    // FPS
+    this._fpsFrames += 1;
+    if (t - (this._fpsAt ?? 0) >= 1) {
+      this.cb.onFps?.(Math.round(this._fpsFrames / Math.max(0.001, t - (this._fpsAt ?? t - 1))));
+      this._fpsAt = t;
+      this._fpsFrames = 0;
     }
 
     // 조준 대상
@@ -1452,15 +1656,19 @@ export class EscapeEngine {
       const key = focus ? `${focus.kind}:${focus.slot}:${focus.id ?? ''}` : null;
       if (key !== this.focusKey) {
         this.focusKey = key;
+        if (this.outline) this.outline.selectedObjects = focus && this._pickObj ? [this._pickObj] : [];
         this.cb.onFocusChange?.(focus ? { ...focus } : null);
       }
     } else if (this.focusKey !== null) {
       this.focusKey = null;
+      if (this.outline) this.outline.selectedObjects = [];
       this.cb.onFocusChange?.(null);
     }
 
     this._updateBody(dt, t, playing);
-    this.renderer.render(this.scene, this.camera);
+    if (this.rgbShift) this.rgbShift.uniforms.amount.value = 0.0012 + this.trauma * 0.006 + (this.blackoutUntil > t ? 0.004 : 0);
+    if (this.composer) this.composer.render(dt);
+    else this.renderer.render(this.scene, this.camera);
   }
 
   _updateLights(t, dt) {
@@ -1529,6 +1737,7 @@ export class EscapeEngine {
       this.addTrauma(0.85);
       this.fovPunch = 9; // 순간적으로 시야가 좁아진다
       this.audio?.sfx('scare');
+      this.cb.onCaption?.('[전등이 꺼진다 — 가까이서 무언가 숨 쉬는 소리]');
       this.cb.onScare?.('blackout');
     } else if (this.kind === 'egypt') {
       this.addTrauma(0.9);
@@ -1536,6 +1745,7 @@ export class EscapeEngine {
       this.torchDipUntil = t + 1.6;
       this._spawnSand(cam.x + (this.R() - 0.5) * 2, cam.z + (this.R() - 0.5) * 2, t);
       this.audio?.sfx('rumble');
+      this.cb.onCaption?.('[무덤 전체가 흔들리고 모래가 쏟아진다]');
       this.cb.onScare?.('rumble');
     }
   }
@@ -1723,7 +1933,7 @@ export class EscapeEngine {
     const sp = Math.hypot(this.vel.x, this.vel.z);
     const runKick = sp > SPEED * 1.25 ? 7 : 0;
     this.fovPunch *= Math.exp(-dt * 2.5);
-    const targetFov = BASE_FOV + runKick * m - this.fovPunch - this.crouch * 2;
+    const targetFov = this.baseFov + runKick * m - this.fovPunch - this.crouch * 2;
     this.fov += (targetFov - this.fov) * Math.min(1, dt * 5);
     if (Math.abs(cam.fov - this.fov) > 0.01) {
       cam.fov = this.fov;
@@ -1779,6 +1989,8 @@ export class EscapeEngine {
 
   dispose() {
     this.disposed = true;
+    this.composer?.dispose?.();
+    this.outline?.dispose?.();
     cancelAnimationFrame(this.raf);
     window.removeEventListener('mousemove', this._onMouseSpike, true);
     window.removeEventListener('keydown', this._onKeyDown);

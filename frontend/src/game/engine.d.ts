@@ -50,6 +50,12 @@ export interface EngineOptions {
   audio?: GameAudio | null;
   /** 화면 흔들림 강도 0~1 (기본 1, 멀미 방지 시 낮춤) */
   motion?: number;
+  quality?: 'low' | 'medium' | 'high';
+  sensitivity?: number;
+  fov?: number;
+  onMark?: (position: Vec3) => void;
+  onCaption?: (text: string) => void;
+  onFps?: (fps: number) => void;
   /** 스태미나 변화 (0~1, 탈진 여부) */
   onStamina?: (stamina: number, exhausted: boolean) => void;
   onInteract?: (target: InteractTarget) => void;
@@ -74,6 +80,10 @@ export declare class EscapeEngine {
   lock(): Promise<boolean>;
   /** 화면 흔들림 강도 0~1 */
   setMotion(v: number): void;
+  setSensitivity(v: number): void;
+  releaseKeys(): void;
+  setFov(v: number): void;
+  addMark(position: Vec3, name: string, color?: string): void;
   updateRemotePlayers(players: RemotePlayerInput[]): void;
   dispose(): void;
 }

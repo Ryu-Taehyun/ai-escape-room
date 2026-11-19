@@ -5,6 +5,7 @@ import { api } from '../api/client';
 import type { SessionRoom, SessionState } from '../types';
 import type { ThemeCopy, ThemeKind } from '../game/themeCopy';
 import type { SfxName } from '../game/audio';
+import { formatTime } from '../utils';
 
 interface Props {
   sessionId: string;
@@ -13,6 +14,7 @@ interface Props {
   disabled: boolean;
   kind: ThemeKind;
   copy: ThemeCopy;
+  remaining: number;
   onClose: () => void;
   onSolved: () => void;
   onState: (s: SessionState) => void;
@@ -21,12 +23,13 @@ interface Props {
 
 type Status = 'idle' | 'busy' | 'denied' | 'granted';
 
-export default function PuzzleModal({ sessionId, room, playerName, disabled, kind, copy, onClose, onSolved, onState, onSound }: Props) {
+export default function PuzzleModal({ sessionId, room, playerName, disabled, kind, copy, remaining, onClose, onSolved, onState, onSound }: Props) {
   const [answer, setAnswer] = useState('');
   const [status, setStatus] = useState<Status>('idle');
   const [message, setMessage] = useState('');
   const [hints, setHints] = useState<string[]>([]);
   const [shake, setShake] = useState(0);
+  const [tries, setTries] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const closeTimer = useRef<number>();
 
@@ -56,6 +59,7 @@ export default function PuzzleModal({ sessionId, room, playerName, disabled, kin
       } else {
         setStatus('denied');
         setMessage(copy.denied);
+        setTries((t) => [answer.trim(), ...t].slice(0, 6));
         onSound('fail');
         setShake((n) => n + 1);
         setAnswer('');
@@ -83,6 +87,9 @@ export default function PuzzleModal({ sessionId, room, playerName, disabled, kin
         <div className="pz-head">
           <span className="pz-sys">
             {copy.puzzleSystem} {String(room.slot + 1).padStart(2, '0')}
+          </span>
+          <span className={`pz-timer ${remaining < 300 ? 'warn' : ''}`} title={copy.timerLabel}>
+            ⏳ {formatTime(remaining)}
           </span>
           <button type="button" className="pz-close" onClick={onClose}>
             {copy.close} <kbd>ESC</kbd>
@@ -126,6 +133,11 @@ export default function PuzzleModal({ sessionId, room, playerName, disabled, kin
           )}
 
           {message && <div className={`pz-message ${status === 'granted' ? 'good' : 'bad'}`}>{message}</div>}
+          {tries.length > 0 && status !== 'granted' && (
+            <div className="pz-tries">
+              시도한 답 ({tries.length}): {tries.map((t, i) => <s key={i}>{t}</s>)}
+            </div>
+          )}
 
           {solved && status !== 'granted' ? (
             <div className="pz-message good">{copy.granted}</div>

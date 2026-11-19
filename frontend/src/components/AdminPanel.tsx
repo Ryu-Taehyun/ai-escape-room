@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { adminApi } from '../api/client';
 import type { Clue, ClueObject, EditLog, MinigameConfig, MinigameType, RoomDraft, RoomFull, SessionState, ThemeFull, ThemeStyle } from '../types';
 import { safeStorage } from '../utils';
+import RoomLayoutEditor from './RoomLayoutEditor';
 
 interface Props {
   session: SessionState;
@@ -233,7 +234,12 @@ function RoomEditor({ room, token, run }: { room: RoomFull; token: string; run: 
       </label>
 
       <h4>🔎 단서 오브젝트 ({d.clues.length})</h4>
-      <p className="muted">위치 x, z 는 방 중심 기준 -4.3 ~ 4.3 (단말기는 z=-3.7, 미니게임은 x=-1.6 z=-1.8 에 있음)</p>
+      <RoomLayoutEditor
+        clues={d.clues}
+        hasPuzzle={!!d.answer.trim()}
+        hasMinigame={!!d.minigame}
+        onMove={(i, pos) => setClue(i, { pos })}
+      />
       {d.clues.map((c, i) => (
         <div key={i} className="clue-edit">
           <div className="row">
