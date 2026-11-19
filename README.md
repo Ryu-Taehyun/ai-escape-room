@@ -15,6 +15,16 @@ AI가 만든 퍼즐을 3D 1인칭으로 풀고 제한 시간 안에 탈출하는
 
 ## 1. 실행 방법
 
+### Windows: 한 번에 실행
+프로젝트 폴더의 **`start.bat`** 을 더블클릭하면 아래를 자동으로 처리하고 브라우저(http://localhost:5173)까지 엽니다.
+1. Python 3.10+ / Node.js 설치 확인
+2. `backend/.venv` 가상환경 생성, 패키지 설치 (`requirements.txt` 가 바뀌었을 때만 다시 설치)
+3. `backend/.env` 가 없으면 `.env.example` 로 생성
+4. `frontend` 패키지 설치 (`package-lock.json` 이 바뀌었을 때만 다시 설치)
+5. 백엔드(8000)·프론트엔드(5173)를 각각 새 창으로 실행 → 응답하면 브라우저 열기
+
+끌 때는 **`stop.bat`** 을 실행하거나 두 서버 창을 닫으면 됩니다. 이미 켜져 있는 서버는 다시 켜지 않습니다.
+
 ### 백엔드
 ```bash
 cd backend
