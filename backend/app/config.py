@@ -21,7 +21,8 @@ class Settings:
 
     AI_PROVIDER: str = os.getenv("AI_PROVIDER", "mock").lower()
     AI_API_KEY: str = os.getenv("AI_API_KEY", "")
-    AI_MODEL: str = os.getenv("AI_MODEL", "claude-sonnet-5-5")
+    # 비워 두면 provider 별 기본 모델 사용
+    AI_MODEL: str = os.getenv("AI_MODEL", "").strip() or {"gemini": "gemini-2.5-flash"}.get(AI_PROVIDER, "claude-sonnet-5-5")
     AI_TIMEOUT_SEC: float = float(os.getenv("AI_TIMEOUT_SEC", "30"))
 
     CORS_ORIGINS: list[str] = [

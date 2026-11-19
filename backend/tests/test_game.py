@@ -1,15 +1,8 @@
 """QA 자동 테스트 (구성원 4).  실행: cd backend && pytest -q"""
-import os
-import tempfile
+from fastapi.testclient import TestClient
 
-os.environ["DATABASE_PATH"] = os.path.join(tempfile.mkdtemp(), "test.db")
-os.environ["AI_PROVIDER"] = "mock"
-os.environ["ADMIN_PASSWORD"] = "test-pw"
-
-from fastapi.testclient import TestClient  # noqa: E402
-
-from app.game_logic import check_answer, select_rooms  # noqa: E402
-from app.main import app  # noqa: E402
+from app.game_logic import check_answer, select_rooms
+from app.main import app
 
 
 def test_select_rooms_keeps_entrance_and_final():

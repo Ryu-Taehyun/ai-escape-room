@@ -2,6 +2,7 @@
 
 - AI_PROVIDER=mock   : API 키 없이 동작. 규칙 기반으로 방/힌트를 생성 (현재 기본값)
 - AI_PROVIDER=claude : AI_API_KEY 가 있으면 Claude Messages API 호출, 실패 시 mock 으로 대체
+- AI_PROVIDER=gemini : AI_API_KEY 에 Google AI Studio 키(무료 등급 가능)를 넣으면 Gemini API 호출, 실패 시 mock
 
 새 LLM 을 붙이려면 AIProvider 를 상속해 complete() 만 구현하면 된다.
 """
@@ -58,10 +59,34 @@ class ClaudeProvider(AIProvider):
         return "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
 
 
+class GeminiProvider(AIProvider):
+    name = "gemini"
+    URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+    async def complete(self, system: str, user: str, max_tokens: int = 800) -> str:
+        headers = {"x-goog-api-key": settings.AI_API_KEY, "content-type": "application/json"}
+        body = {
+            "systemInstruction": {"parts": [{"text": system}]},
+            "contents": [{"role": "user", "parts": [{"text": user}]}],
+            # 최신 Gemini 는 '생각' 토큰도 출력 한도에 포함되므로 여유를 크게 둔다
+            "generationConfig": {"maxOutputTokens": max_tokens + 4096, "temperature": 0.9},
+        }
+        async with httpx.AsyncClient(timeout=settings.AI_TIMEOUT_SEC) as client:
+            res = await client.post(self.URL.format(model=settings.AI_MODEL), headers=headers, json=body)
+            res.raise_for_status()
+            data = res.json()
+        parts = ((data.get("candidates") or [{}])[0].get("content") or {}).get("parts", [])
+        return "".join(p.get("text", "") for p in parts if not p.get("thought"))
+
+
+_PROVIDERS: dict[str, type[AIProvider]] = {"claude": ClaudeProvider, "gemini": GeminiProvider}
+
+
 def get_provider() -> AIProvider | None:
     """실제 LLM provider. 키가 없으면 None → mock 사용."""
-    if settings.AI_PROVIDER == "claude" and settings.AI_API_KEY:
-        return ClaudeProvider()
+    cls = _PROVIDERS.get(settings.AI_PROVIDER)
+    if cls and settings.AI_API_KEY:
+        return cls()
     return None
 
 
@@ -196,7 +221,7 @@ def mock_hint(room: dict, level: int) -> str:
 # Public API
 # =====================================================================
 async def generate_room(theme: dict, order_idx: int, prompt: str = "") -> tuple[dict, str]:
-    """방 초안 생성. (draft, source) 반환. source = 'claude' | 'mock'"""
+    """방 초안 생성. (draft, source) 반환. source = 'claude' | 'gemini' | 'mock'"""
     provider = get_provider()
     if provider:
         try:
