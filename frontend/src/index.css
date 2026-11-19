@@ -412,7 +412,6 @@ button.big { font-size: 1.2em; padding: 10px 32px; }
 .theme-egypt .intro-eyebrow { color: #7a4a14; font-family: 'Song Myung', serif; }
 .theme-egypt .intro-title { font-family: 'Song Myung', serif; color: #3a200a; font-weight: 400; }
 .theme-egypt .intro-action { border: 1px solid #8a6420; color: #5a3410; background: rgba(255, 220, 140, 0.45); }
-.resume-hint { position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); z-index: 4; pointer-events: none; font-size: 0.85em; padding: 6px 14px; background: rgba(0, 0, 0, 0.6); border-radius: 999px; opacity: 0.85; }
 
 /* 즉시 알림 */
 .toast { position: absolute; left: 50%; bottom: 24%; transform: translateX(-50%); z-index: 5; max-width: min(560px, 90vw); padding: 12px 18px; pointer-events: none; animation: toast-in 0.25s ease-out; text-align: center; line-height: 1.5; background: rgba(0, 0, 0, 0.8); border-radius: 8px; }

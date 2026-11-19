@@ -100,7 +100,6 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
   const [captions, setCaptions] = useState<Caption[]>([]);
   const [fps, setFps] = useState(0);
   const [restarting, setRestarting] = useState(false);
-  const [showResume, setShowResume] = useState(false); // ESC 로 창을 닫은 뒤: "화면을 클릭하면 계속"
   const [hintPenalty, setHintPenalty] = useState(0);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -280,7 +279,7 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
   /**
    * 창을 닫고 곧바로 조작으로 복귀 (버튼 클릭·Enter·I/M 키처럼 브라우저가 재고정을 허용하는 입력 직후).
    * Chrome 은 ESC 로 고정을 푼 직후 약 1초간 재고정을 거부하므로 한 번 더 시도하고,
-   * 그래도 안 되면 메뉴를 띄우지 않고 작은 안내만 보여 준다 (다음 클릭으로 바로 이어짐).
+   * 그래도 안 되면 메뉴 없이 그대로 둔다 (다음 클릭으로 바로 이어짐).
    */
   const closeAndResume = useCallback(() => {
     setModal(null);
@@ -291,9 +290,7 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
       if (ok) return;
       window.setTimeout(() => {
         if (modalRef.current || engineRef.current !== eng) return;
-        eng.lock().then((ok2) => {
-          if (!ok2 && !modalRef.current) setShowResume(true);
-        });
+        void eng.lock();
       }, 1100);
     });
   }, []);
@@ -303,7 +300,6 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
     setModal(null);
     if (stateRef.current?.status === 'playing') {
       engineRef.current?.setInputEnabled(true);
-      setShowResume(true);
     }
   }, []);
 
@@ -360,7 +356,6 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
             setPointerLocked(locked);
             if (locked) {
               setStarted(true);
-              setShowResume(false);
               audioRef.current?.start();
               if (modalRef.current?.kind === 'pause') setModal(null);
             } else if (ownUnlockRef.current) {
@@ -432,7 +427,6 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
         if (cur) {
           if (cur.kind !== 'admin' && cur.kind !== 'minigame') closeOnly();
         } else if (!pointerLockedRef.current && stateRef.current?.status === 'playing' && startedRef.current) {
-          setShowResume(false);
           setModal({ kind: 'pause' });
         }
         return;
@@ -557,7 +551,6 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
         </div>
       </div>
 
-      {showResume && !modal && !pointerLocked && status === 'playing' && <div className="resume-hint">{copy.resumeHint}</div>}
       {everConnected && !connected && <div className="conn-banner">서버와 연결이 끊겼습니다 — 다시 연결하는 중…</div>}
       {loading && !waiting && (
         <div className="loading-screen">

@@ -104,7 +104,7 @@ const check = (name, ok, extra = '') => {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(700);
   check('창에서 ESC → 창 닫힘, 메뉴 안 뜸', !(await page.$('.pz')) && !(await page.$('.panel.pause')));
-  check('ESC 후 "클릭하면 계속" 안내', !!(await page.$('.resume-hint')));
+  check('ESC 후 안내 문구 없음', !(await page.$('.resume-hint')));
   await page.mouse.click(640, 380);
   await page.waitForTimeout(600);
   check('한 번 클릭으로 바로 이어짐', (await locked()) && !(await page.$('.pz')));
