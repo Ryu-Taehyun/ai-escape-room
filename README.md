@@ -102,6 +102,30 @@ npm run dev
 
 ---
 
+### 게임 화면 편의 기능
+| 기능 | 내용 |
+|---|---|
+| 대기실 | 방을 만들면 대기실에서 방 코드를 공유하고, 접속자 전원이 **준비 완료**하면 타이머가 시작됩니다 (혼자면 바로 시작 가능) |
+| 일시정지 메뉴 (ESC) | 마우스 감도, 시야각, 볼륨(전체·배경음·효과음), 음소거, 화면 흔들림, 그래픽 품질(낮음/중간/높음), 소리 자막, FPS 표시, 조작 안내 |
+| 그래픽 품질 | 낮음: 그림자·후처리 끔 / 중간: 그림자 + 바라보는 물건 외곽선 / 높음: + 빛번짐, 공포 테마 색수차 |
+| HUD | 다음에 할 일 한 줄 안내, 화면 구석 미니맵(나·팀원·핑), 스태미나, 최근 단서(R) |
+| 협동 | Q 핑, 걷는 팀원 캐릭터(손전등 빛), Enter 채팅, 연결 끊김 표시 + 자동 재연결 |
+| 결과 화면 | 걸린 시간, 방별 기록, 팀원별 기여(방·단서·열쇠), 같은 설정으로 다시 하기 |
+| 접근성 | 미니게임에 색 + 기호 표시(색약 대응), 소리 자막, 흔들림 줄이기, 휴대폰 접속 시 PC 전용 안내 |
+| 관리자 | 방 평면도에서 단서를 **드래그해서 배치** |
+
+### 화면 자동 테스트 (QA)
+```bash
+cd frontend
+npx playwright install chromium   # 처음 한 번
+npm run e2e                       # 공포 테마 (백엔드·프론트 실행 중이어야 함)
+npm run e2e -- egypt              # 이집트 테마
+```
+대기실 → 입장 → 단서 → 잠긴 문 → 퍼즐(오답·정답·자동 복귀) → 일시정지 → 채팅 → 핑 → 단서 다시 보기 → 인벤토리·지도 → 미니게임까지 17개 항목을 확인하고,
+스크린샷을 `frontend/e2e/out/` 에 저장합니다.
+
+---
+
 ## 3. 게임 규칙 (구현 완료)
 
 | 항목 | 값 | 구현 위치 |
@@ -131,9 +155,12 @@ npm run dev
 | C (누르는 동안) | 웅크리기 — 시점이 낮아지고 발소리가 작아짐 |
 | F | 손전등(공포) / 횃불(이집트) 켜기·끄기 |
 | 🎥 버튼 | 화면 흔들림 줄이기 (멀미 방지, OS '동작 줄이기' 설정을 기본값으로 따름) |
+| Q | 핑 — 바라보는 곳을 팀원 화면·지도에 표시 |
+| R | 최근 단서 다시 보기 |
+| Enter | 팀 채팅 (마우스 고정 유지) |
 | I | 팀 인벤토리 |
 | M | 지도 |
-| ESC | 창 닫기 / 커서 해제 |
+| ESC | 일시정지 메뉴 (설정·조작 안내·관리자 모드) |
 
 ---
 
@@ -167,9 +194,13 @@ ai-escape-room/
 │       ├── game/themeCopy.ts  # 테마별 화면 문구                        [4]
 │       ├── game/engine.d.ts   # 엔진 타입 선언                        [3]
 │       ├── pages/Lobby.tsx    # 테마/방 개수/시간 선택, 방 코드 참가   [3]
-│       ├── pages/Game.tsx     # HUD, 타이머, 소켓, 엔진 연결          [3]
-│       ├── components/        # PuzzleModal, ClueDoc, MiniMap, InventoryPanel,
-│       │                      # ChatPanel, AdminPanel                 [3]
+│       ├── pages/Game.tsx     # 게임 화면 조립 (HUD, 창, 엔진 연결)     [3]
+│       ├── hooks/             # useGameSocket(협동), useCountdown(타이머) [3]
+│       ├── settings.ts        # 플레이어 설정 저장                      [3]
+│       ├── components/        # PuzzleModal, ClueDoc, MiniMap, MiniStrip, InventoryPanel,
+│       │                      # ChatPanel, PauseMenu, WaitingRoom, ResultScreen,
+│       │                      # AdminPanel, RoomLayoutEditor           [3]
+│   └── e2e/play.cjs           # 화면 자동 테스트                        [4]
 │       ├── components/minigames/  # Sequence / Wires / Timing 게임    [3]
 │       ├── api/client.ts      # REST 클라이언트                       [3]
 │       ├── api/socket.ts      # WebSocket 클라이언트 (자동 재연결)    [3]

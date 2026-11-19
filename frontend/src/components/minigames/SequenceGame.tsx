@@ -1,6 +1,9 @@
 // 기억력 미니게임: 불빛(문양)이 켜지는 순서를 기억해 그대로 누르기
 import { useEffect, useState } from 'react';
 
+/** 색약 대응: 색만이 아니라 모양으로도 구분 */
+export const SHAPES = ['▲', '●', '■', '◆'];
+
 interface Props {
   params: { symbols: string[]; sequence: number[]; show_ms: number };
   onDone: (result: { input: number[] }) => void;
@@ -55,8 +58,9 @@ export default function SequenceGame({ params, onDone }: Props) {
       </p>
       <div className="seq-grid">
         {symbols.map((sym, idx) => (
-          <button key={idx} className={`seq-btn ${lit === idx ? 'lit' : ''}`} disabled={phase !== 'input'} onClick={() => press(idx)}>
-            {sym}
+          <button key={idx} className={`seq-btn ${lit === idx ? 'lit' : ''}`} disabled={phase !== 'input'} onClick={() => press(idx)} aria-label={`${SHAPES[idx]} 버튼`}>
+            <span className="seq-sym">{sym}</span>
+            <span className="seq-shape">{SHAPES[idx % SHAPES.length]}</span>
           </button>
         ))}
       </div>

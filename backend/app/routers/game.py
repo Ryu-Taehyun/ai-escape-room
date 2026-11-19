@@ -42,7 +42,7 @@ def list_themes():
 @router.post("/sessions", response_model=SessionState)
 def create_session(body: CreateSessionRequest):
     try:
-        sid = game_logic.create_session(body.theme_key, body.room_count, body.time_limit_min)
+        sid = game_logic.create_session(body.theme_key, body.room_count, body.time_limit_min, body.start_now)
         return game_logic.get_state(sid)
     except GameError as e:
         _raise(e)
@@ -52,6 +52,19 @@ def create_session(body: CreateSessionRequest):
 def get_session(session_id: str):
     try:
         return game_logic.get_state(session_id.upper())
+    except GameError as e:
+        _raise(e)
+
+
+@router.post("/sessions/{session_id}/start", response_model=SessionState)
+async def start_session(session_id: str):
+    """대기실에서 바로 시작 (준비 완료를 기다리지 않음)"""
+    sid = session_id.upper()
+    try:
+        if game_logic.start_session(sid):
+            await manager.chat(sid, None, "게임이 시작되었습니다.")
+            await manager.broadcast(sid, {"type": "state_changed", "reason": "start"})
+        return game_logic.get_state(sid)
     except GameError as e:
         _raise(e)
 

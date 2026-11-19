@@ -15,6 +15,23 @@ export class GameAudio {
     this.timers = new Set();
     this.tension = 0;
     this._heartOn = false;
+    this.volumes = { master: 1, ambience: 1, sfx: 1 };
+    /** 소리 자막 콜백 (설정에서 켰을 때 Game 이 연결) */
+    this.onCaption = null;
+  }
+
+  /** @param {{ master?: number, ambience?: number, sfx?: number }} v */
+  setVolumes(v) {
+    this.volumes = { ...this.volumes, ...v };
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    this.master.gain.setTargetAtTime(this.muted ? 0 : MASTER * this.volumes.master, now, 0.08);
+    this.amb.gain.setTargetAtTime(Math.max(0.0001, this.volumes.ambience), now, 0.08);
+    this.fx.gain.setTargetAtTime(this.volumes.sfx, now, 0.08);
+  }
+
+  _caption(text) {
+    this.onCaption?.(text);
   }
 
   start() {
@@ -31,15 +48,16 @@ export class GameAudio {
     }
     const c = this.ctx;
     this.master = c.createGain();
-    this.master.gain.value = this.muted ? 0 : MASTER;
+    this.master.gain.value = this.muted ? 0 : MASTER * this.volumes.master;
     const comp = c.createDynamicsCompressor();
     this.master.connect(comp);
     comp.connect(c.destination);
     this.amb = c.createGain();
     this.amb.gain.value = 0.0001;
-    this.amb.gain.exponentialRampToValueAtTime(1, c.currentTime + 4);
+    this.amb.gain.exponentialRampToValueAtTime(Math.max(0.0001, this.volumes.ambience), c.currentTime + 4);
     this.amb.connect(this.master);
     this.fx = c.createGain();
+    this.fx.gain.value = this.volumes.sfx;
     this.fx.connect(this.master);
     this.noiseBuf = this._noiseBuffer(3);
 
@@ -52,7 +70,7 @@ export class GameAudio {
 
   setMuted(m) {
     this.muted = m;
-    if (this.master) this.master.gain.setTargetAtTime(m ? 0 : MASTER, this.ctx.currentTime, 0.08);
+    if (this.master) this.master.gain.setTargetAtTime(m ? 0 : MASTER * this.volumes.master, this.ctx.currentTime, 0.08);
   }
 
   /** 0~1 : 남은 시간이 적을수록 심장 박동이 빨라진다 */
@@ -242,17 +260,18 @@ export class GameAudio {
       if (!this.ctx) return;
       const pan = (Math.random() - 0.5) * 1.8;
       const pick = Math.random();
+      const side = pan < -0.3 ? '왼쪽에서 ' : pan > 0.3 ? '오른쪽에서 ' : '';
       if (this.kind === 'horror') {
-        if (pick < 0.22) this._bang(pan);
-        else if (pick < 0.42) this._drip(pan);
-        else if (pick < 0.6) this._whisper(pan);
-        else if (pick < 0.8) this._creak(pan);
-        else this._distantSteps(pan);
+        if (pick < 0.22) { this._bang(pan); this._caption(`[${side}멀리서 쿵 하는 소리]`); }
+        else if (pick < 0.42) { this._drip(pan); this._caption('[물방울 떨어지는 소리]'); }
+        else if (pick < 0.6) { this._whisper(pan); this._caption(`[${side}누군가 속삭인다]`); }
+        else if (pick < 0.8) { this._creak(pan); this._caption('[철제 구조물이 삐걱인다]'); }
+        else { this._distantSteps(pan); this._caption(`[${side}어딘가에서 발소리]`); }
       } else if (this.kind === 'egypt') {
-        if (pick < 0.3) this._burst({ type: 'lowpass', freq: 120, gain: 0.18, attack: 0.6, decay: 2.2, pan });
-        else if (pick < 0.55) this._burst({ type: 'highpass', freq: 3500, gain: 0.04, attack: 0.3, decay: 1.6, pan });
-        else if (pick < 0.8) this._whisper(pan);
-        else this._stoneGrind(pan, 0.1);
+        if (pick < 0.3) { this._burst({ type: 'lowpass', freq: 120, gain: 0.18, attack: 0.6, decay: 2.2, pan }); this._caption('[땅속 깊은 곳의 울림]'); }
+        else if (pick < 0.55) { this._burst({ type: 'highpass', freq: 3500, gain: 0.04, attack: 0.3, decay: 1.6, pan }); this._caption('[모래가 흘러내린다]'); }
+        else if (pick < 0.8) { this._whisper(pan); this._caption(`[${side}누군가 속삭인다]`); }
+        else { this._stoneGrind(pan, 0.1); this._caption('[돌이 갈리는 소리]'); }
       }
       this._later(next, 6000 + Math.random() * 12000);
     };
@@ -367,6 +386,10 @@ export class GameAudio {
         }
         break;
       }
+      case 'mark':
+        this._tone({ type: 'triangle', f0: 1320, gain: 0.06, decay: 0.12 });
+        this._tone({ type: 'triangle', f0: 1760, gain: 0.05, decay: 0.18, delay: 0.09 });
+        break;
       case 'breath':
         // 들숨 → 날숨
         this._burst({ type: 'bandpass', freq: 1100, q: 0.7, gain: 0.05, attack: 0.25, decay: 0.3 });

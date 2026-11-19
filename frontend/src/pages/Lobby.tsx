@@ -98,6 +98,8 @@ export default function Lobby({ onJoin }: Props) {
   const [joinCode, setJoinCode] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // 터치 전용 기기(휴대폰·태블릿)는 키보드·마우스 조작이 불가능하므로 안내
+  const touchOnly = typeof window !== 'undefined' && window.matchMedia?.('(hover: none) and (pointer: coarse)').matches;
 
   useEffect(() => {
     Promise.all([api.config(), api.themes()])
@@ -402,6 +404,11 @@ export default function Lobby({ onJoin }: Props) {
           </aside>
         </div>
 
+        {touchOnly && (
+          <p className="lobby-error device-note">
+            📱 이 게임은 <b>키보드와 마우스</b>로 조작하는 PC용 3D 게임입니다. 휴대폰·태블릿에서는 로비만 이용할 수 있어요.
+          </p>
+        )}
         {error && <p className="lobby-error">⚠️ {error}</p>}
         <footer className="lobby-footer">
           {config && (

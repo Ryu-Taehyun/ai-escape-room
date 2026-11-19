@@ -201,3 +201,29 @@ def test_migrates_old_database(tmp_path):
         assert room["name"] == "정체불명의 서버실" and len(room["clues"]) == 3
     finally:
         settings.DATABASE_PATH = prev
+
+
+def test_waiting_room_ready_and_mark():
+    """대기실: 시작 전에는 진행 불가, 접속자 전원이 준비하면 자동 시작 + 핑 전달"""
+    with TestClient(app) as c:
+        state = c.post("/api/sessions", json={"theme_key": "horror", "room_count": 2, "start_now": False}).json()
+        sid = state["id"]
+        assert state["status"] == "waiting" and state["remaining_seconds"] == 60 * 60
+        assert c.post(f"/api/sessions/{sid}/rooms/0/answer", json={"answer": "3142"}).status_code == 400
+        with c.websocket_connect(f"/ws/{sid}?name=A") as a, c.websocket_connect(f"/ws/{sid}?name=B") as b:
+            a.send_json({"type": "ready", "ready": True})
+            assert c.get(f"/api/sessions/{sid}").json()["status"] == "waiting"  # B 가 아직
+            b.send_json({"type": "ready", "ready": True})
+            b.send_json({"type": "mark", "position": [1, 1, 1]})
+            got = []
+            for _ in range(12):
+                m = a.receive_json()
+                got.append(m["type"])
+                if m["type"] == "mark":
+                    break
+            assert "lobby" in got and "state_changed" in got and "mark" in got
+        st = c.get(f"/api/sessions/{sid}").json()
+        assert st["status"] == "playing" and st["started_at"]
+        # 혼자 바로 시작
+        sid2 = c.post("/api/sessions", json={"theme_key": "egypt", "start_now": False}).json()["id"]
+        assert c.post(f"/api/sessions/{sid2}/start").json()["status"] == "playing"

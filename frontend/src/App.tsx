@@ -11,5 +11,13 @@ export default function App() {
   const [join, setJoin] = useState<JoinInfo | null>(null);
 
   if (!join) return <Lobby onJoin={setJoin} />;
-  return <Game key={join.sessionId} sessionId={join.sessionId} playerName={join.playerName} onExit={() => setJoin(null)} />;
+  return (
+    <Game
+      key={join.sessionId}
+      sessionId={join.sessionId}
+      playerName={join.playerName}
+      onExit={() => setJoin(null)}
+      onRestart={(sessionId) => setJoin({ sessionId, playerName: join.playerName })}
+    />
+  );
 }

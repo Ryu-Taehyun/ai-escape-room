@@ -7,6 +7,7 @@ interface Props {
   myPos: Vec3;
   myName: string;
   players: RemotePlayer[];
+  marks?: { key: number; name: string; position: Vec3 }[];
   title?: string;
   onClose: () => void;
 }
@@ -23,7 +24,7 @@ const STATUS = {
 const toX = (x: number) => (x + HALF) * SCALE;
 const toY = (z: number) => (z + HALF) * SCALE;
 
-export default function MiniMap({ rooms, currentSlot, myPos, myName, players, title = '지도', onClose }: Props) {
+export default function MiniMap({ rooms, currentSlot, myPos, myName, players, marks = [], title = '지도', onClose }: Props) {
   const width = rooms.length * ROOM_SIZE * SCALE;
   const height = ROOM_SIZE * SCALE;
   const cleared = rooms.filter((r) => r.status === 'cleared').length;
@@ -95,6 +96,14 @@ export default function MiniMap({ rooms, currentSlot, myPos, myName, players, ti
               );
             })}
 
+            {marks.map((m) => (
+              <g key={m.key} transform={`translate(${toX(m.position[0])},${toY(m.position[2])})`}>
+                <circle r={7} fill="none" stroke="#ffd54a" strokeWidth={2} />
+                <text y={-11} textAnchor="middle" fill="#ffd54a" fontSize={10}>
+                  ▼ {m.name}
+                </text>
+              </g>
+            ))}
             {players.map((p) => (
               <g key={p.id} transform={`translate(${toX(p.position[0])},${toY(p.position[2])})`}>
                 <circle r={6} fill="#4fc3f7" stroke="#000" />
@@ -122,6 +131,7 @@ export default function MiniMap({ rooms, currentSlot, myPos, myName, players, ti
           <span><i className="sq" /> 단말기</span>
           <span><i className="dot clue" /> 찾은 단서</span>
           <span>🎮 미니게임 · 🔑 열쇠</span>
+          <span style={{ color: '#ffd54a' }}>◯ 핑</span>
         </div>
       </div>
     </div>

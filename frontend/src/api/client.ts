@@ -29,8 +29,9 @@ const put = (body: unknown): RequestInit => ({ method: 'PUT', body: JSON.stringi
 export const api = {
   config: () => request<GameConfig>('/api/config'),
   themes: () => request<ThemeSummary[]>('/api/themes'),
-  createSession: (theme_key: string, room_count: number, time_limit_min: number) =>
-    request<SessionState>('/api/sessions', post({ theme_key, room_count, time_limit_min })),
+  createSession: (theme_key: string, room_count: number, time_limit_min: number, start_now = false) =>
+    request<SessionState>('/api/sessions', post({ theme_key, room_count, time_limit_min, start_now })),
+  startSession: (sid: string) => request<SessionState>(`/api/sessions/${sid}/start`, post({})),
   getSession: (sid: string) => request<SessionState>(`/api/sessions/${sid}`),
   submitAnswer: (sid: string, slot: number, answer: string, player_name: string) =>
     request<AnswerResponse>(`/api/sessions/${sid}/rooms/${slot}/answer`, post({ answer, player_name })),

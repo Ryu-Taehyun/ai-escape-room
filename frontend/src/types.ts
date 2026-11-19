@@ -1,7 +1,7 @@
 // 백엔드 schemas.py 와 1:1 대응
 
 export type RoomStatus = 'locked' | 'unlocked' | 'cleared';
-export type SessionStatus = 'playing' | 'escaped' | 'failed';
+export type SessionStatus = 'waiting' | 'playing' | 'escaped' | 'failed';
 export type Vec3 = [number, number, number];
 
 export interface ThemeStyle {
@@ -87,6 +87,7 @@ export interface SessionRoom {
   is_final: boolean;
   hint_count: number;
   cleared_by: string | null;
+  cleared_at: string | null;
   clues: ClueState[];
   minigame: MinigameState | null;
 }
@@ -98,6 +99,8 @@ export interface SessionState {
   time_limit_min: number;
   remaining_seconds: number;
   status: SessionStatus;
+  started_at: string | null;
+  ended_at: string | null;
   hints_used: number;
   rooms: SessionRoom[];
   inventory: InventoryItem[];
@@ -161,6 +164,7 @@ export interface RemotePlayer {
   position: Vec3;
   rotation: number;
   slot: number;
+  ready?: boolean;
 }
 
 export interface ChatMessage {

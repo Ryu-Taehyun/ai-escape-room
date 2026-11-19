@@ -56,7 +56,8 @@ def _new_session_id() -> str:
             return sid
 
 
-def create_session(theme_key: str, room_count: int, time_limit_min: int) -> str:
+def create_session(theme_key: str, room_count: int, time_limit_min: int, start_now: bool = True) -> str:
+    """start_now=False 면 대기실(waiting) 상태로 만들고, 모두 준비하면 start_session 으로 시작한다."""
     if not settings.MIN_TIME_MIN <= time_limit_min <= settings.MAX_TIME_MIN:
         raise GameError(f"게임 시간은 {settings.MIN_TIME_MIN}~{settings.MAX_TIME_MIN}분이어야 합니다.")
     theme = repo.get_theme_by_key(theme_key)
@@ -64,11 +65,22 @@ def create_session(theme_key: str, room_count: int, time_limit_min: int) -> str:
         raise GameError("존재하지 않는 테마입니다.", 404)
     rooms = select_rooms(repo.list_rooms(theme["id"]), room_count)
     sid = _new_session_id()
-    repo.create_session(sid, theme["id"], [r["id"] for r in rooms], time_limit_min)
+    repo.create_session(sid, theme["id"], [r["id"] for r in rooms], time_limit_min, "playing" if start_now else "waiting")
     return sid
 
 
+def start_session(session_id: str) -> bool:
+    """대기실 → 게임 시작 (타이머는 이 순간부터). 이미 시작했으면 False"""
+    session = _require_session(session_id)
+    if session["status"] != "waiting":
+        return False
+    repo.update_session(session_id, {"status": "playing", "started_at": now_iso()})
+    return True
+
+
 def remaining_seconds(session: dict) -> int:
+    if session["status"] == "waiting":
+        return session["time_limit_min"] * 60 + session["extra_seconds"]
     started = datetime.fromisoformat(session["started_at"])
     # 종료된 세션은 종료 시점 기준으로 고정
     end = datetime.fromisoformat(session["ended_at"]) if session.get("ended_at") else datetime.now(timezone.utc)
@@ -140,6 +152,7 @@ def get_state(session_id: str) -> dict:
                 "is_final": s["slot"] == len(slots) - 1,
                 "hint_count": len(room["hints"]),
                 "cleared_by": s["cleared_by"],
+                "cleared_at": s["cleared_at"],
                 "clues": [
                     {
                         "id": c["id"],
@@ -173,6 +186,8 @@ def get_state(session_id: str) -> dict:
         "time_limit_min": session["time_limit_min"],
         "remaining_seconds": remaining_seconds(session),
         "status": session["status"],
+        "started_at": session["started_at"],
+        "ended_at": session["ended_at"],
         "hints_used": session["hints_used"],
         "rooms": rooms_public,
         "inventory": [

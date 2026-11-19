@@ -1,7 +1,7 @@
 """WebSocket 엔드포인트: ws://<host>/ws/{session_id}?name=닉네임"""
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from .. import repository as repo
+from .. import game_logic, repository as repo
 from ..ws_manager import manager
 
 router = APIRouter()
@@ -11,6 +11,17 @@ def _vec3(value) -> list[float] | None:
     if isinstance(value, list) and len(value) == 3 and all(isinstance(v, (int, float)) for v in value):
         return [float(v) for v in value]
     return None
+
+
+async def _lobby_update(sid: str) -> None:
+    """대기실 준비 상태를 알리고, 접속자 전원이 준비하면 게임을 시작한다."""
+    players = manager.players(sid)
+    await manager.broadcast(sid, {"type": "lobby", "players": players})
+    session = repo.get_session(sid)
+    if session and session["status"] == "waiting" and players and all(p["ready"] for p in players):
+        if game_logic.start_session(sid):
+            await manager.chat(sid, None, "모두 준비 완료! 게임을 시작합니다.")
+            await manager.broadcast(sid, {"type": "state_changed", "reason": "start"})
 
 
 @router.websocket("/ws/{session_id}")
@@ -50,6 +61,13 @@ async def game_socket(websocket: WebSocket, session_id: str, name: str = "Player
                 text = str(data.get("text", "")).strip()
                 if text:
                     await manager.chat(sid, player, text)
+            elif kind == "ready":
+                player.ready = bool(data.get("ready", True))
+                await _lobby_update(sid)
+            elif kind == "mark":
+                pos = _vec3(data.get("position"))
+                if pos is not None:
+                    await manager.broadcast(sid, {"type": "mark", "player_id": player.id, "name": player.name, "position": pos})
             elif kind == "ping":
                 await websocket.send_json({"type": "pong"})
     except WebSocketDisconnect:
@@ -58,3 +76,4 @@ async def game_socket(websocket: WebSocket, session_id: str, name: str = "Player
         await manager.disconnect(sid, player.id)
         await manager.broadcast(sid, {"type": "player_left", "player_id": player.id})
         await manager.chat(sid, None, f"{player.name} 님이 나갔습니다.")
+        await _lobby_update(sid)

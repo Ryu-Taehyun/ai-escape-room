@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from .config import settings
 
 RoomStatus = Literal["locked", "unlocked", "cleared"]
-SessionStatus = Literal["playing", "escaped", "failed"]
+SessionStatus = Literal["waiting", "playing", "escaped", "failed"]
 
 
 class ThemeStyle(BaseModel):
@@ -73,6 +73,7 @@ class CreateSessionRequest(BaseModel):
     theme_key: str
     room_count: int = Field(settings.DEFAULT_ROOMS, ge=settings.MIN_ROOMS, le=settings.MAX_ROOMS)
     time_limit_min: int = Field(settings.DEFAULT_TIME_MIN, ge=settings.MIN_TIME_MIN, le=settings.MAX_TIME_MIN)
+    start_now: bool = Field(True, description="False 면 대기실에서 모두 준비 완료 후 시작")
 
 
 class ClueState(BaseModel):
@@ -117,6 +118,7 @@ class SessionRoomPublic(BaseModel):
     is_final: bool
     hint_count: int
     cleared_by: Optional[str] = None
+    cleared_at: Optional[str] = None
     clues: list[ClueState]
     minigame: Optional[MinigameState] = None
 
@@ -128,6 +130,8 @@ class SessionState(BaseModel):
     time_limit_min: int
     remaining_seconds: int
     status: SessionStatus
+    started_at: Optional[str] = None
+    ended_at: Optional[str] = None
     hints_used: int
     rooms: list[SessionRoomPublic]
     inventory: list[InventoryItem]
