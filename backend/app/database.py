@@ -101,7 +101,8 @@ def now_iso() -> str:
 
 @contextmanager
 def get_conn():
-    conn = sqlite3.connect(settings.DATABASE_PATH)
+    # timeout: 다른 스레드가 쓰는 중이면 최대 10초 기다린다 (요청은 스레드풀에서 동시에 처리됨)
+    conn = sqlite3.connect(settings.DATABASE_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     try:
@@ -116,6 +117,8 @@ def get_conn():
 
 def init_db() -> None:
     with get_conn() as conn:
+        # WAL: 읽기와 쓰기가 서로 막지 않아 동시 요청에 유리 (DB 파일에 한 번 설정하면 유지됨)
+        conn.execute("PRAGMA journal_mode=WAL")
         _migrate_columns(conn)
         conn.executescript(SCHEMA)
         count = conn.execute("SELECT COUNT(*) FROM themes").fetchone()[0]

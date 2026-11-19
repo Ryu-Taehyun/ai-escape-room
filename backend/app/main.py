@@ -2,17 +2,20 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import BASE_DIR, settings
 from .database import init_db
+from .game_logic import GameError
 from .routers import admin, game, ws
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    settings.check_startup()  # 운영 환경 + 기본 비밀번호면 여기서 시작 거부
     init_db()
     if settings.admin_password_is_default:
         logging.getLogger("uvicorn.error").warning("⚠ 기본 관리자 비밀번호를 사용 중입니다. backend/.env 의 ADMIN_PASSWORD 를 바꾸세요.")
@@ -28,6 +31,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(GameError)
+async def game_error_handler(_: Request, e: GameError) -> JSONResponse:
+    """게임 규칙 위반(잠긴 방, 종료된 게임 등) → HTTPException 과 같은 {"detail": ...} 형식으로 응답"""
+    return JSONResponse(status_code=e.status_code, content={"detail": e.message})
+
 
 app.include_router(game.router)
 app.include_router(admin.router)

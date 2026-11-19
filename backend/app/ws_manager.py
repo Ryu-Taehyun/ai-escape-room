@@ -95,6 +95,15 @@ class ConnectionManager:
         for sid in list(self.sessions.keys()):
             await self.broadcast(sid, message)
 
+    async def notice(self, player: Player, text: str) -> None:
+        """한 사람에게만 보내는 시스템 안내 (예: 채팅 빈도 제한)"""
+        try:
+            await player.ws.send_json(
+                {"type": "chat", "player_id": "system", "name": "SYSTEM", "text": text[:300], "ts": time.time()}
+            )
+        except Exception:  # noqa: BLE001 - 끊긴 소켓은 수신 루프에서 정리된다
+            pass
+
     async def chat(self, session_id: str, player: Player | None, text: str) -> None:
         await self.broadcast(
             session_id,
