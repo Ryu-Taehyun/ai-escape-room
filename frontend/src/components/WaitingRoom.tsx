@@ -1,5 +1,6 @@
 // 대기실: 방 코드 공유 + 접속자 준비 상태. 모두 준비하면 서버가 자동으로 시작한다.
 import { useState } from 'react';
+import { DIFFICULTY_LABEL } from '../types';
 import type { RemotePlayer, SessionState } from '../types';
 import type { ThemeCopy } from '../game/themeCopy';
 
@@ -35,7 +36,7 @@ export default function WaitingRoom({ state, players, myId, connected, copy, onR
         <div className="intro-eyebrow">{copy.introEyebrow}</div>
         <h2>대기실</h2>
         <p className="muted">
-          {state.theme.name} · 방 {state.room_count}개 · {state.time_limit_min}분 — 타이머는 시작할 때부터 흐릅니다.
+          {state.theme.name} · 난이도 {DIFFICULTY_LABEL[state.difficulty ?? 'normal']} · 방 {state.room_count}개 · {state.time_limit_min}분 — 타이머는 시작할 때부터 흐릅니다.
         </p>
 
         <div className="wr-code">

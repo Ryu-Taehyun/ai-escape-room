@@ -138,3 +138,24 @@ def test_client_ip_behind_proxy(monkeypatch):
     monkeypatch.setattr(settings, "TRUST_PROXY", True)
     assert client_ip(req("6.6.6.6, 203.0.113.7")) == "203.0.113.7"  # 프록시가 붙인 마지막 값
     assert client_ip(req()) == "10.0.0.1"
+
+
+def test_old_db_gets_new_study_theme_and_new_names(tmp_path, monkeypatch):
+    """이전 버전 DB(붉은 서재 없음, 옛 테마 이름)도 서버를 켜면 새 테마와 이름으로 갱신된다."""
+    from app.config import settings
+    from app.database import get_conn, init_db
+    monkeypatch.setattr(settings, "DATABASE_PATH", str(tmp_path / "old.db"))
+    init_db()
+    with get_conn() as conn:
+        sid = conn.execute("SELECT id FROM themes WHERE key = 'study'").fetchone()["id"]
+        conn.execute("DELETE FROM rooms WHERE theme_id = ?", (sid,))
+        conn.execute("DELETE FROM themes WHERE id = ?", (sid,))
+        conn.execute("UPDATE themes SET name = '공포 - 감염된 데이터센터' WHERE key = 'horror'")
+        conn.execute("UPDATE themes SET name = '내가 바꾼 이름' WHERE key = 'egypt'")
+    init_db()
+    with get_conn() as conn:
+        names = {r["key"]: r["name"] for r in conn.execute("SELECT key, name FROM themes")}
+        study_rooms = conn.execute("SELECT COUNT(*) FROM rooms r JOIN themes t ON t.id = r.theme_id WHERE t.key = 'study'").fetchone()[0]
+    assert names["study"] == "붉은 서재" and study_rooms == 5
+    assert names["horror"] == "공포"
+    assert names["egypt"] == "내가 바꾼 이름"  # 관리자가 바꾼 이름은 유지

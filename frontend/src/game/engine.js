@@ -6,6 +6,8 @@
 //   - 방 사이 벽 중앙에 문(폭 DOOR_W). 다음 방이 'locked' 이면 문이 닫혀 통과 불가
 //
 // 테마 (style.decor)
+//   study  → study  : 붉은 서재 (리빌딩: 팀원 프로젝트의 장면 모듈을 game/study/ 로 이식) — 샹들리에·촛불·벽난로,
+//                      비 오는 창문과 번개, 오래 보면 튀어나오는 귀신 액자, 정전 + 그림자 형체, 전용 단서 모델
 //   server → horror : 손전등, 깜빡이는 형광등, 녹슨 철문, 핏자국, 서버 랙, CRT 단말기, 정전 + 그림자 형체
 //   pillar → egypt  : 손 횃불, 벽 횃불, 상형문자 사암, 석상·관·항아리, 모래먼지, 지진 + 모래 낙하
 //   none   → neutral: 단순한 방 (AI 로 만든 커스텀 테마)
@@ -25,6 +27,10 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RGBShiftShader } from 'three/addons/shaders/RGBShiftShader.js';
 import * as TX from './textures.js';
+import { StudyWorld } from './study/studyWorld.js';
+import { createFlashlightModel } from './study/flashlightModel.js';
+import { makeGradeShader, GRADE_PRESETS } from './study/grade.js';
+import * as ST from './study/studyTextures.js';
 
 export const ROOM_SIZE = 10;
 export const MINIGAME_POS = [-1.6, -1.8]; // 방 중심 기준 미니게임 오브젝트 위치 [x, z]
@@ -43,6 +49,7 @@ const INTERACT_DIST = 3;
 const MOVE_SEND_MS = 80;
 
 const THEME_CFG = {
+  study: { fog: 0x1c0d0b, density: 0.03, ambient: 0.08, hemi: 2.1, exposure: 1.45, roomLight: 0xffb070 },
   horror: { fog: 0x040506, density: 0.072, ambient: 0.05, hemi: 0.05, exposure: 1.25, roomLight: 0xcfe6ff },
   egypt: { fog: 0x1a1108, density: 0.045, ambient: 0.16, hemi: 0.22, exposure: 1.15, roomLight: 0xff9a4a },
   neutral: { fog: null, density: 0.04, ambient: 0.35, hemi: 0.25, exposure: 1.0, roomLight: 0xffffff },
@@ -91,12 +98,19 @@ export class EscapeEngine {
     this.container = container;
     this.rooms = options.rooms.map((r) => ({ ...r }));
     this.style = options.style;
-    this.kind = this.style.decor === 'server' ? 'horror' : this.style.decor === 'pillar' ? 'egypt' : 'neutral';
+    this.kind = this.style.decor === 'study' ? 'study' : this.style.decor === 'server' ? 'horror' : this.style.decor === 'pillar' ? 'egypt' : 'neutral';
     this.cfg = THEME_CFG[this.kind];
     this.cb = options;
     this.audio = options.audio || null;
     // 그래픽 품질: low(그림자·후처리 없음) / medium(그림자·외곽선) / high(+빛번짐·색수차)
     this.quality = options.quality || 'medium';
+    // 자동 해상도: FPS 가 떨어지면 렌더 해상도를 낮추고 여유가 생기면 되돌린다 (팀원 프로젝트의 autoQuality 이식)
+    this.dynamicRes = options.dynamicRes ?? true;
+    this._qTime = 0;
+    this._qFrames = 0;
+    this._qCooldown = 3;
+    this.lowTime = 0;
+    this._pulse = 0;
     this.baseFov = options.fov || BASE_FOV;
     this.marks = [];
     this._fpsFrames = 0;
@@ -176,11 +190,13 @@ export class EscapeEngine {
     this.scene.add(this.head);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.quality === 'low' ? 1 : this.quality === 'medium' ? 1.5 : 2));
+    this.maxPixelRatio = Math.min(window.devicePixelRatio, this.quality === 'low' ? 1 : this.quality === 'medium' ? 1.5 : 2);
+    this.pixelRatio = this.maxPixelRatio;
+    this.renderer.setPixelRatio(this.pixelRatio);
     this.renderer.setSize(w, h);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = this.cfg.exposure;
-    this.renderer.shadowMap.enabled = this.kind === 'horror' && this.quality !== 'low';
+    this.renderer.shadowMap.enabled = (this.kind === 'horror' || this.kind === 'study') && this.quality !== 'low';
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
 
@@ -195,10 +211,13 @@ export class EscapeEngine {
     this.raycaster = new THREE.Raycaster();
     this.center = new THREE.Vector2(0, 0);
 
+    if (this.kind === 'study') this.study = new StudyWorld(this);
     this._buildWorld();
     this._buildHandLight();
     this._buildDust();
-    if (this.kind === 'horror') this._buildStalker();
+    if (this.kind === 'horror' || this.kind === 'study') this._buildStalker();
+    // 1인칭 손에 든 손전등 모델 (팀원 프로젝트 이식)
+    if (this.kind === 'horror' || this.kind === 'study') this.torchModel = createFlashlightModel(this.camera);
     if (this.kind === 'egypt') this._buildSandFall();
     this._finalizeShadows();
     this._applyStatuses(true);
@@ -246,6 +265,7 @@ export class EscapeEngine {
   }
 
   _wallMat(width) {
+    if (this.study) return this.study.wallMat(width);
     const rw = Math.max(0.25, width / (this.kind === 'egypt' ? 5 : 4));
     if (this.kind === 'egypt') return this._mat('sandwall', () => TX.sandstoneWall(21), [rw, 1], { bump: 0.05, rough: 0.95 });
     const color = this.kind === 'neutral' ? new THREE.Color(this.style.wall).getHex() : 0xffffff;
@@ -290,11 +310,14 @@ export class EscapeEngine {
     const cx = (minX + maxX) / 2;
 
     this.scene.add(new THREE.AmbientLight(K === 'egypt' ? 0xffd8a8 : 0xffffff, this.cfg.ambient));
-    this.scene.add(new THREE.HemisphereLight(K === 'egypt' ? 0xffc890 : 0x9fb6c8, K === 'egypt' ? 0x3a2410 : 0x0b0b0b, this.cfg.hemi));
+    this.hemi = K === 'study' ? new THREE.HemisphereLight(0x8e6a5e, 0x2e1812, this.cfg.hemi) : new THREE.HemisphereLight(K === 'egypt' ? 0xffc890 : 0x9fb6c8, K === 'egypt' ? 0x3a2410 : 0x0b0b0b, this.cfg.hemi);
+    this.scene.add(this.hemi);
+    if (this.study) this.study.buildLightPool();
 
     // 바닥 / 천장
-    const floorMat =
-      K === 'egypt'
+    const floorMat = this.study
+      ? this.study.floorMat(total)
+      : K === 'egypt'
         ? this._mat('sandfloor', () => TX.sandFloor(22), [total / 5, 2], { bump: 0.04, rough: 1 })
         : this._mat('tiles', () => TX.floorTiles(2), [total / 2.5, ROOM_SIZE / 2.5], { bump: 0.03, rough: 0.75, color: K === 'neutral' ? new THREE.Color(s.floor).getHex() : 0xffffff });
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(total, ROOM_SIZE), floorMat);
@@ -302,8 +325,9 @@ export class EscapeEngine {
     floor.position.set(cx, 0, 0);
     this.scene.add(floor);
 
-    const ceilMat =
-      K === 'egypt'
+    const ceilMat = this.study
+      ? this.study.ceilMat(total)
+      : K === 'egypt'
         ? this._mat('ceil-stone', () => TX.roughCeiling(23), [total / 4, 2.5], { bump: 0.05, rough: 1 })
         : this._mat('ceil-tiles', () => TX.ceilingTiles(3), [total / 2.4, ROOM_SIZE / 2.4], { rough: 0.95 });
     const ceil = new THREE.Mesh(new THREE.PlaneGeometry(total, ROOM_SIZE), ceilMat);
@@ -353,6 +377,7 @@ export class EscapeEngine {
       if (room.minigame) this._buildMinigameObject(i, x, room.minigame);
       if (K === 'horror') this._decorHorror(i, x, room);
       else if (K === 'egypt') this._decorEgypt(i, x, room);
+      else if (K === 'study') this.study.decorate(i, x, room);
       this._buildRoomSign(i, x, room);
     });
   }
@@ -362,7 +387,31 @@ export class EscapeEngine {
     const group = new THREE.Group();
     let doorMesh;
     let indicatorMat;
-    if (K === 'egypt') {
+    if (K === 'study') {
+      // 붉은 서재: 경첩으로 열리는 나무 문 (마지막 출구는 철문). 문 옆 놋쇠 램프가 잠김(빨강)/열림(초록)
+      const mat = this._mat(isExit ? 'st-irondoor' : 'st-door', () => (isExit ? ST.doorPanel(31, true) : ST.doorPanel(29)), [1, 1], { bump: 0.04, rough: isExit ? 0.5 : 0.7, metal: isExit ? 0.6 : 0 });
+      const pivot = new THREE.Group();
+      pivot.position.set(0, 0, -DOOR_W / 2);
+      group.add(pivot);
+      doorMesh = this._box(WALL_T * 0.5, DOOR_H, DOOR_W, mat, 0, DOOR_H / 2, DOOR_W / 2, pivot);
+      const knob = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), this._plain(0xb08a3a, 0.3, 0.85));
+      for (const sx of [-0.08, 0.08]) {
+        const k = knob.clone();
+        k.position.set(sx, 1.05, DOOR_W - 0.18);
+        pivot.add(k);
+      }
+      const frameMat = this._plain(0x24120a, 0.6);
+      this._box(0.3, 0.12, DOOR_W + 0.24, frameMat, wx, DOOR_H + 0.06, 0);
+      for (const side of [-1, 1]) this._box(0.3, DOOR_H, 0.12, frameMat, wx, DOOR_H / 2, side * (DOOR_W / 2 + 0.06));
+      indicatorMat = new THREE.MeshStandardMaterial({ color: 0x220000, emissive: 0xff2a10, emissiveIntensity: 1.8 });
+      for (const side of [-1, 1]) {
+        const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.05, 12, 10), indicatorMat);
+        lamp.position.set(wx + side * 0.17, 1.55, -DOOR_W / 2 - 0.3);
+        lamp.userData.noShadow = true;
+        this.scene.add(lamp);
+      }
+      group.userData.pivot = pivot;
+    } else if (K === 'egypt') {
       const mat = this._mat('stonedoor', () => TX.stoneDoor(24), [1, 1], { bump: 0.08, rough: 0.95 });
       doorMesh = this._box(WALL_T * 0.9, DOOR_H, DOOR_W, mat, 0, DOOR_H / 2, 0, group);
       // 문 위의 두 보석 눈
@@ -394,9 +443,10 @@ export class EscapeEngine {
     }
     group.position.set(wx, 0, 0);
     this.scene.add(group);
-    doorMesh.userData = { target: { kind: 'door', slot, label: isExit ? (K === 'egypt' ? '태양의 문' : '비상 탈출구') : K === 'egypt' ? '돌문' : '보안 철문' } };
+    const doorLabel = K === 'study' ? (isExit ? '출구 철문' : '나무 문') : isExit ? (K === 'egypt' ? '태양의 문' : '비상 탈출구') : K === 'egypt' ? '돌문' : '보안 철문';
+    doorMesh.userData = { target: { kind: 'door', slot, label: doorLabel } };
     this.interactables.push(doorMesh);
-    const door = { group, mesh: doorMesh, index: slot, open: false, indicatorMat, isExit, wx };
+    const door = { group, mesh: doorMesh, index: slot, open: false, indicatorMat, isExit, wx, pivot: group.userData.pivot || null };
     group.userData.door = door;
 
     if (isExit && K === 'horror') {
@@ -417,7 +467,9 @@ export class EscapeEngine {
 
   _buildRoomLighting(i, x, room) {
     const K = this.kind;
-    if (K === 'horror') {
+    if (K === 'study') {
+      this.study.buildRoomLighting(i, x, room);
+    } else if (K === 'horror') {
       const patterns = ['flicker', 'buzz', 'dying', 'flicker', 'buzz'];
       const name = room.name || '';
       let pattern = patterns[i % patterns.length];
@@ -494,7 +546,7 @@ export class EscapeEngine {
     }
     const plate = new THREE.Mesh(
       new THREE.PlaneGeometry(2.2, 0.55),
-      new THREE.MeshStandardMaterial({ map: this._texture(`sign-${i}-${room.name}`, () => TX.signPlate(`${i + 1}. ${room.name}`, K, 40 + i)), roughness: 0.7, metalness: K === 'horror' ? 0.4 : 0 }),
+      new THREE.MeshStandardMaterial({ map: this._texture(`sign-${i}-${room.name}`, () => TX.signPlate(`${i + 1}. ${room.name}`, K, 40 + i)), roughness: 0.7, metalness: K === 'horror' || K === 'study' ? 0.4 : 0 }),
     );
     plate.position.set(x, 3.15, -HALF + 0.12);
     plate.userData.noShadow = true;
@@ -503,7 +555,7 @@ export class EscapeEngine {
 
   // ============================================================ 상호작용 오브젝트
   _glint(x, y, z) {
-    const color = this.kind === 'egypt' ? 0xffd27a : this.kind === 'horror' ? 0xcfe8ff : new THREE.Color(this.style.accent).getHex();
+    const color = this.kind === 'egypt' || this.kind === 'study' ? 0xffd27a : this.kind === 'horror' ? 0xcfe8ff : new THREE.Color(this.style.accent).getHex();
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this._texture('glow', () => TX.glowSprite()), color, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
     s.scale.set(0.2, 0.2, 1);
     s.position.set(x, y, z);
@@ -516,6 +568,14 @@ export class EscapeEngine {
 
   _buildPuzzleObject(slot, x) {
     const K = this.kind;
+    if (K === 'study') {
+      const { group: desk, indicator } = this.study.buildPuzzle(slot, x, this.rooms[slot]);
+      this.study.addHitBox(desk, { minTop: 1.3 });
+      desk.userData.target = { kind: 'puzzle', slot, label: '번호 자물쇠' };
+      this.markers[slot] = { kind: 'lock', mat: indicator };
+      this.interactables.push(desk);
+      return;
+    }
     const group = new THREE.Group();
     group.position.set(x + PUZZLE_POS[0], 0, PUZZLE_POS[1]);
     if (K === 'egypt') {
@@ -565,6 +625,15 @@ export class EscapeEngine {
     const lx = clamp(px, -4.4, 4.4);
     const lz = clamp(pz, -4.4, 4.4);
     const wx = x + lx;
+    if (K === 'study') {
+      const built = this.study.buildClue(slot, x, clue, lx, lz);
+      this.study.addHitBox(built.group);
+      built.group.userData.target = { kind: 'clue', slot, id: clue.id, label: clue.label };
+      this.interactables.push(built.group);
+      const glint = this._glint(built.glint[0], built.topY, built.glint[1]);
+      this.clueObjs.set(`${slot}:${clue.id}`, { glint });
+      return;
+    }
     const group = new THREE.Group();
     const seed = slot * 31 + clue.id.length * 7;
     let topY = 1.1;
@@ -731,6 +800,15 @@ export class EscapeEngine {
 
   _buildMinigameObject(slot, x, minigame) {
     const K = this.kind;
+    if (K === 'study') {
+      const { group: g, glowMat: gm, topY: ty } = this.study.buildMinigame(slot, x, minigame);
+      this.study.addHitBox(g);
+      g.userData.target = { kind: 'minigame', slot, label: minigame.title };
+      this.interactables.push(g);
+      const gl = this._glint(x + MINIGAME_POS[0], ty, MINIGAME_POS[1]);
+      this.minigameObjs[slot] = { glint: gl, mat: gm };
+      return;
+    }
     const [px, pz] = MINIGAME_POS;
     const group = new THREE.Group();
     group.position.set(x + px, 0, pz);
@@ -1106,10 +1184,10 @@ export class EscapeEngine {
       this.hand.add(f);
       this.handFlame = f;
     } else {
-      const l = new THREE.SpotLight(0xe6efff, this.kind === 'horror' ? 55 : 25, 22, 0.42, 0.55, 1.5);
+      const l = new THREE.SpotLight(this.kind === 'study' ? 0xffe6cc : 0xe6efff, this.kind === 'horror' ? 55 : this.kind === 'study' ? 30 : 25, 22, 0.42, 0.55, 1.5);
       l.position.set(0.25, -0.2, 0.1);
       l.target.position.set(0.05, -0.1, -4);
-      l.castShadow = this.kind === 'horror';
+      l.castShadow = this.kind === 'horror' || this.kind === 'study';
       l.shadow.mapSize.set(1024, 1024);
       l.shadow.bias = -0.0006;
       l.shadow.camera.near = 0.2;
@@ -1194,7 +1272,13 @@ export class EscapeEngine {
       const basic = Array.isArray(o.material) ? false : o.material?.isMeshBasicMaterial;
       if (basic) return;
       o.receiveShadow = true;
-      if (o.geometry?.type !== 'PlaneGeometry') o.castShadow = true;
+      // 작은 소품·평면·인스턴스(책·병)는 그림자를 만들지 않는다 → 그림자 계산량 감소 (팀원 프로젝트 방식)
+      if (o.geometry?.type === 'PlaneGeometry' || o.isInstancedMesh || o.material?.transparent) return;
+      o.geometry.computeBoundingBox?.();
+      const bb = o.geometry.boundingBox;
+      if (!bb) return;
+      bb.getSize(this._v).multiply(o.getWorldScale(new THREE.Vector3()));
+      o.castShadow = Math.max(this._v.x, this._v.y, this._v.z) > 0.35;
     });
   }
 
@@ -1217,11 +1301,12 @@ export class EscapeEngine {
       const open = door.isExit ? room?.status === 'cleared' : !!next && next.status !== 'locked';
       if (open && !door.open && !instant) {
         this.audio?.sfx('door');
-        this.cb.onCaption?.(this.kind === 'egypt' ? '[돌문이 갈리며 열린다]' : '[철문이 유압 소리를 내며 열린다]');
+        this.cb.onCaption?.(this.kind === 'egypt' ? '[돌문이 갈리며 열린다]' : this.kind === 'study' ? '[삐걱 — 낡은 문이 천천히 열린다]' : '[철문이 유압 소리를 내며 열린다]');
         this.addTrauma(this.kind === 'egypt' ? 0.55 : 0.3);
       }
       door.open = open;
-      if (instant) door.mesh.position.y = open ? -DOOR_H / 2 - 0.05 : DOOR_H / 2;
+      if (instant && door.pivot) door.pivot.rotation.y = open ? 1.45 : 0;
+      else if (instant) door.mesh.position.y = open ? -DOOR_H / 2 - 0.05 : DOOR_H / 2;
       door.indicatorMat.emissive.set(open ? 0x22ff55 : 0xff1a10);
     });
     this.rooms.forEach((room, i) => {
@@ -1229,6 +1314,7 @@ export class EscapeEngine {
       const solved = room.status === 'cleared' || room.puzzle_solved;
       if (m?.kind === 'crt') m.mode = solved ? 'granted' : 'locked';
       if (m?.kind === 'tablet') m.solved = solved;
+      if (m?.kind === 'lock') m.mat.emissive.set(solved ? 0x33ff66 : room.status === 'locked' ? 0x331008 : 0xff2a10);
       if (m?.kind === 'plain') m.mat.emissive.set(solved ? 0x33ff66 : room.status === 'locked' ? 0x555555 : accent);
       for (const clue of room.clues || []) {
         const obj = this.clueObjs.get(`${i}:${clue.id}`);
@@ -1280,13 +1366,14 @@ export class EscapeEngine {
     outline.edgeStrength = 3.2;
     outline.edgeGlow = 0.6;
     outline.edgeThickness = 1.4;
-    outline.visibleEdgeColor.set(this.kind === 'egypt' ? 0xffd27a : 0xcfe8ff);
+    outline.visibleEdgeColor.set(this.kind === 'egypt' ? 0xffd27a : this.kind === 'study' ? 0xffc27a : 0xcfe8ff);
     outline.hiddenEdgeColor.set(0x222222);
     composer.addPass(outline);
     this.outline = outline;
     if (this.quality === 'high') {
       // 빛번짐: CRT 화면·횃불·비상등
-      composer.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), this.kind === 'egypt' ? 0.45 : 0.6, 0.5, 0.82));
+      // 빛번짐은 절반 해상도로 계산 (팀원 프로젝트 방식, 가볍게)
+      composer.addPass(new UnrealBloomPass(new THREE.Vector2(w / 2, h / 2), this.kind === 'egypt' ? 0.45 : this.kind === 'study' ? 0.3 : 0.6, 0.5, this.kind === 'study' ? 0.9 : 0.82));
       if (this.kind === 'horror') {
         const rgb = new ShaderPass(RGBShiftShader);
         rgb.uniforms.amount.value = 0.0012;
@@ -1295,6 +1382,11 @@ export class EscapeEngine {
       }
     }
     composer.addPass(new OutputPass());
+    // 공포 색보정 (붉은 서재·공포): 채도↓, 붉은 그림자, 비네팅, 필름 노이즈, 심장 박동 맥동
+    if (GRADE_PRESETS[this.kind]) {
+      this.grade = new ShaderPass(makeGradeShader(GRADE_PRESETS[this.kind]));
+      composer.addPass(this.grade);
+    }
     this.composer = composer;
   }
 
@@ -1559,11 +1651,20 @@ export class EscapeEngine {
     // 문 (바닥으로 내려가며 열림)
     for (const door of [...this.doors, this.exitDoor]) {
       if (!door) continue;
+      if (door.pivot) {
+        const rt = door.open ? 1.45 : 0;
+        door.pivot.rotation.y += (rt - door.pivot.rotation.y) * Math.min(1, dt * 1.6);
+        continue;
+      }
       const target = door.open ? -DOOR_H / 2 - 0.05 : DOOR_H / 2;
       door.mesh.position.y += (target - door.mesh.position.y) * Math.min(1, dt * (this.kind === 'egypt' ? 1.2 : 2.5));
     }
 
     this._updateLights(t, dt);
+    if (this.study) {
+      this.study.update(dt, t, Math.max(0, this.currentSlot), playing);
+      this.hemi.intensity = this.cfg.hemi * (this.blackoutUntil > t ? 0.35 : 1) + this.study.lightning * 3.5; // 번개 칠 때 방이 번쩍
+    }
 
     for (const b of this.blinkers) b.mat.emissiveIntensity = 0.6 + 0.8 * (Math.sin(t * b.speed + b.phase) > -0.2 ? 1 : 0.2);
     for (const s of this.swingers) s.obj.rotation.z = Math.sin(t * s.speed) * s.amp;
@@ -1666,6 +1767,24 @@ export class EscapeEngine {
     }
 
     this._updateBody(dt, t, playing);
+    if (this.torchModel) {
+      this._euler.setFromQuaternion(this.head.quaternion, 'YXZ');
+      const sp = Math.hypot(this.vel.x, this.vel.z);
+      this.torchModel.update(dt, { visible: this.handOn, walking: sp > 0.4, yaw: this._euler.y, pitch: this._euler.x, level: this.handLight ? this.handLight.intensity / this.handBase : 1 });
+    }
+    // 심장 박동: 시간이 얼마 안 남으면 화면 가장자리가 박동에 맞춰 조여 온다 (팀원 프로젝트)
+    if (this.lowTime > 0 && playing) {
+      const period = this.lowTime > 1 ? 0.6 : 0.95;
+      if (t % period < dt) this._pulse = Math.max(this._pulse, 0.35);
+    }
+    this._pulse = Math.max(0, this._pulse - dt * 1.2);
+    if (this.grade) {
+      this.grade.uniforms.time.value = t;
+      this.grade.uniforms.pulse.value = Math.max(this._pulse, this.trauma * 0.6);
+    }
+    // 움직이거나 빠르게 도는 동안엔 외곽선 계산(장면을 한 번 더 그림)을 쉰다 (팀원 프로젝트)
+    if (this.outline) this.outline.enabled = Math.hypot(this.vel.x, this.vel.z) < 0.3 && Math.abs(this.turnRoll) < 0.02;
+    if (this.dynamicRes) this._autoResolution(dt);
     if (this.rgbShift) this.rgbShift.uniforms.amount.value = 0.0012 + this.trauma * 0.006 + (this.blackoutUntil > t ? 0.004 : 0);
     if (this.composer) this.composer.render(dt);
     else this.renderer.render(this.scene, this.camera);
@@ -1707,7 +1826,7 @@ export class EscapeEngine {
     // 손전등 / 손 횃불
     if (this.handLight) {
       let v = this.handOn ? 1 : 0;
-      if (this.kind === 'horror' && this.handOn) {
+      if ((this.kind === 'horror' || this.kind === 'study') && this.handOn) {
         if (blackout && t < this.blackoutUntil - 0.6) v = Math.random() < 0.5 ? 0 : 1;
         else if (Math.random() < 0.004) v = 0.3;
       }
@@ -1720,6 +1839,19 @@ export class EscapeEngine {
 
   _triggerEvent(t) {
     const cam = this.head.position;
+    if (this.kind === 'study') {
+      // 촛불·샹들리에가 한꺼번에 꺼지고, 어둠 속에 형체가 섰다가 사라진다 + 속삭임
+      const sec = 1.4 + this.R() * 0.6;
+      this.blackoutUntil = t + sec;
+      this.study.blackout(sec);
+      this._showStalker(cam, sec);
+      this.addTrauma(0.75);
+      this.fovPunch = 8;
+      this.audio?.sfx('scare');
+      this.cb.onCaption?.(this.study.whisper());
+      this.cb.onScare?.('blackout');
+      return;
+    }
     if (this.kind === 'horror') {
       this.blackoutUntil = t + 1.2 + this.R() * 0.6;
       this.stalkerHideAt = this.blackoutUntil + 0.15;
@@ -1747,6 +1879,77 @@ export class EscapeEngine {
       this.audio?.sfx('rumble');
       this.cb.onCaption?.('[무덤 전체가 흔들리고 모래가 쏟아진다]');
       this.cb.onScare?.('rumble');
+    }
+  }
+
+  _showStalker(cam, sec) {
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(this.head.quaternion);
+    fwd.y = 0;
+    fwd.normalize();
+    const slot = clamp(Math.floor((cam.x + HALF) / ROOM_SIZE), 0, this.rooms.length - 1);
+    const rx = slot * ROOM_SIZE;
+    this.stalker.position.set(clamp(cam.x + fwd.x * 5, rx - HALF + 0.6, rx + HALF - 0.6), 0, clamp(cam.z + fwd.z * 5, -HALF + 0.6, HALF - 0.6));
+    this.stalker.lookAt(cam.x, 0, cam.z);
+    this.stalker.visible = true;
+    this.stalkerHideAt = this.clock.elapsedTime + sec + 0.15;
+  }
+
+  /** 창밖 번개 (붉은 서재) */
+  _onLightning() {
+    this.audio?.sfx('thunder');
+    this.addTrauma(0.12);
+    this.cb.onCaption?.('[창밖에 번개가 친다 — 천둥]');
+  }
+
+  /** 액자 귀신이 튀어나옴 (붉은 서재) */
+  _onGhost() {
+    this.audio?.sfx('scare');
+    this.addTrauma(0.9);
+    this.fovPunch = 10;
+    this.cb.onCaption?.('[액자 속에서 무언가가 튀어나왔다]');
+    this.cb.onScare?.('ghost');
+  }
+
+  /** 자동 해상도: 1.5초 평균 FPS 가 48 미만이면 해상도 배율을 낮추고, 58 초과면 올린다 */
+  _autoResolution(dt) {
+    this._qCooldown -= dt;
+    if (this._qCooldown > 0) return;
+    this._qTime += dt;
+    this._qFrames++;
+    if (this._qTime < 1.5) return;
+    const fps = this._qFrames / this._qTime;
+    this._qTime = 0;
+    this._qFrames = 0;
+    const min = Math.max(0.5, this.maxPixelRatio * 0.5);
+    let next = this.pixelRatio;
+    if (fps < 48 && this.pixelRatio > min) next = Math.max(min, this.pixelRatio - 0.15);
+    else if (fps > 58 && this.pixelRatio < this.maxPixelRatio) next = Math.min(this.maxPixelRatio, this.pixelRatio + 0.1);
+    if (next !== this.pixelRatio) {
+      this.pixelRatio = next;
+      this.renderer.setPixelRatio(next);
+      if (this.composer) {
+        this.composer.setPixelRatio(next);
+        this.composer.setSize(this.container.clientWidth, this.container.clientHeight);
+      }
+      this._qCooldown = 1;
+      this.cb.onResolution?.(next / this.maxPixelRatio);
+    }
+  }
+
+  /** 남은 시간 경고 단계 (0 = 없음, 1 = 5분 이하, 2 = 1분 이하) → 화면 맥동 */
+  setLowTime(level) {
+    this.lowTime = level;
+  }
+
+  setDynamicRes(on) {
+    this.dynamicRes = !!on;
+    if (!on && this.pixelRatio !== this.maxPixelRatio) {
+      this.pixelRatio = this.maxPixelRatio;
+      this.renderer.setPixelRatio(this.pixelRatio);
+      if (this.composer) {
+        this.composer.setPixelRatio(this.pixelRatio);
+        this.composer.setSize(this.container.clientWidth, this.container.clientHeight);
+      }
     }
   }
 

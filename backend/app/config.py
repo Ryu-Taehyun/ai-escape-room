@@ -31,6 +31,10 @@ class Settings:
     AI_TIMEOUT_SEC: float = float(os.getenv("AI_TIMEOUT_SEC", "30"))
     # API 키가 있으면 게임을 시작할 때마다 AI 가 모든 방의 문제를 새로 만든다 (false 면 테마의 기본 방 사용)
     AI_RANDOM_ROOMS: bool = os.getenv("AI_RANDOM_ROOMS", "true").strip().lower() not in ("0", "false", "no", "off")
+    # ---- AI 비용 보호 (넘으면 오류 대신 기본 방 / 기본 힌트로 진행) ----
+    AI_DAILY_LIMIT: int = int(os.getenv("AI_DAILY_LIMIT", "100"))              # 서버 전체 하루 AI 호출 수 (0 이하 = 제한 없음)
+    AI_GAMES_PER_IP_HOUR: int = int(os.getenv("AI_GAMES_PER_IP_HOUR", "5"))   # 같은 IP 가 1시간에 만들 수 있는 AI 게임 수
+    AI_MAX_CONCURRENT_GAMES: int = int(os.getenv("AI_MAX_CONCURRENT_GAMES", "2"))  # 동시에 AI 로 방을 만드는 게임 수
 
     # nginx 등 리버스 프록시 뒤에서 실행할 때만 true → 관리자 로그인 제한에 X-Forwarded-For 사용
     TRUST_PROXY: bool = os.getenv("TRUST_PROXY", "false").strip().lower() in ("1", "true", "yes", "on")
@@ -47,6 +51,9 @@ class Settings:
     MAX_TIME_MIN: int = 120
     DEFAULT_TIME_MIN: int = 60
     ROOMS_PER_THEME: int = 5  # 테마마다 5개 방을 보유, 세션은 그 중 2~5개를 사용
+    DIFFICULTIES: tuple[str, ...] = ("easy", "normal", "hard")
+    DIFFICULTY_LABELS = {"easy": "쉬움", "normal": "보통", "hard": "어려움"}
+    HINT_PENALTY_RATE = {"easy": 0.5, "normal": 1.0, "hard": 1.5}  # 난이도별 힌트 감점 배율
     HINT_PENALTY_SEC: int = int(os.getenv("HINT_PENALTY_SEC", "60"))  # 힌트 1회당 줄어드는 시간 (0 = 감점 없음)
     ADMIN_TOKEN_TTL_SEC: int = int(os.getenv("ADMIN_TOKEN_TTL_SEC", str(2 * 60 * 60)))  # 관리자 로그인 유지 시간
     SESSION_KEEP_HOURS: int = int(os.getenv("SESSION_KEEP_HOURS", "24"))  # 이보다 오래된 세션은 서버 시작 시 삭제

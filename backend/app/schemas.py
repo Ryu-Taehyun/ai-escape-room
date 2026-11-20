@@ -16,11 +16,13 @@ class ThemeStyle(BaseModel):
     fog: str = "#000000"
     accent: str = "#00ffff"
     ambient: float = 0.25
-    decor: Literal["server", "pillar", "none"] = "none"
+    decor: Literal["study", "server", "pillar", "none"] = "none"
 
 
 # ---------- 단서 / 미니게임 (방 콘텐츠) ----------
-ClueObject = Literal["note", "board", "book", "tablet", "statue", "jar", "box"]
+# 붉은 서재 전용 오브젝트(phone ~ body)는 전용 3D 모델과 전용 화면(휴대폰·일기장·달력 등)으로 표시된다.
+ClueObject = Literal["note", "board", "book", "tablet", "statue", "jar", "box",
+                     "phone", "diary", "calendar", "clock", "bookshelf", "portrait", "body"]
 MinigameType = Literal["sequence", "wires", "timing"]
 
 
@@ -70,6 +72,7 @@ class GameConfig(BaseModel):
     ai_provider: str = settings.AI_PROVIDER
     ai_random_rooms: bool = settings.ai_random_rooms   # 게임마다 AI 가 문제를 새로 만드는가
     ai_wait_sec: int = int(settings.AI_TIMEOUT_SEC)     # 방 생성 최대 대기 시간 (로비 안내용)
+    ai_calls_left: Optional[int] = None                 # 오늘 남은 AI 호출 수 (제한 없음/AI 없음이면 None)
 
 
 class CreateSessionRequest(BaseModel):
@@ -77,6 +80,7 @@ class CreateSessionRequest(BaseModel):
     room_count: int = Field(settings.DEFAULT_ROOMS, ge=settings.MIN_ROOMS, le=settings.MAX_ROOMS)
     time_limit_min: int = Field(settings.DEFAULT_TIME_MIN, ge=settings.MIN_TIME_MIN, le=settings.MAX_TIME_MIN)
     start_now: bool = Field(True, description="False 면 대기실에서 모두 준비 완료 후 시작")
+    difficulty: Literal["easy", "normal", "hard"] = "normal"
 
 
 class ClueState(BaseModel):
@@ -137,6 +141,9 @@ class SessionState(BaseModel):
     started_at: Optional[str] = None
     ended_at: Optional[str] = None
     hints_used: int
+    ai_note: Optional[str] = None   # AI 방 생성을 건너뛴 이유 (한도 초과 등) → 화면 안내
+    difficulty: str = "normal"      # easy | normal | hard
+    hint_penalty_sec: int = 0       # 이 게임의 힌트 1회 감점(초)
     rooms: list[SessionRoomPublic]
     inventory: list[InventoryItem]
 

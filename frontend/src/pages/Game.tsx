@@ -11,12 +11,13 @@ import { useGameSocket, type MarkEvent } from '../hooks/useGameSocket';
 import MiniMap from '../components/MiniMap';
 import MiniStrip, { type MapMark } from '../components/MiniStrip';
 import PuzzleModal from '../components/PuzzleModal';
-import ClueDoc, { type ClueDocData } from '../components/ClueDoc';
+import ClueDoc, { RICH_OBJECTS, type ClueDocData } from '../components/ClueDoc';
 import InventoryPanel from '../components/InventoryPanel';
 import ChatPanel from '../components/ChatPanel';
 import PauseMenu from '../components/PauseMenu';
 import WaitingRoom from '../components/WaitingRoom';
 import ResultScreen from '../components/ResultScreen';
+import { DIFFICULTY_LABEL } from '../types';
 import type { SessionRoom, SessionState, Vec3 } from '../types';
 import { formatTime } from '../utils';
 
@@ -32,6 +33,9 @@ interface Props {
 }
 
 /** 마우스 고정을 풀고 여는 창 (한 번에 하나). 단서·문은 창 없이 바로 처리한다. */
+const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab']);
+const RESUME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Enter']);
+
 type Modal = { kind: 'puzzle' | 'minigame'; slot: number } | { kind: 'map' | 'inventory' | 'admin' | 'pause' } | null;
 
 interface Toast {
@@ -66,13 +70,14 @@ const toEngineRooms = (s: SessionState): EngineRoom[] =>
 function nextObjective(room: SessionRoom | undefined, kind: ThemeKind, isLast: boolean): string {
   if (!room) return '';
   const egypt = kind === 'egypt';
+  const study = kind === 'study';
   if (room.status === 'locked') return '이 방은 아직 잠겨 있다';
-  if (room.status === 'cleared') return isLast ? '탈출구가 열렸다!' : egypt ? '다음 방으로 가는 돌문이 열렸다' : '다음 구역으로 이동하라';
+  if (room.status === 'cleared') return isLast ? '탈출구가 열렸다!' : egypt ? '다음 방으로 가는 돌문이 열렸다' : study ? '다음 방으로 가는 문이 열렸다' : '다음 구역으로 이동하라';
   const found = room.clues.filter((c) => c.found).length;
   const mg = room.minigame;
   if (room.has_puzzle && !room.puzzle_solved) {
     if (found < room.clues.length) return `방을 조사해 단서를 찾아라 (${found}/${room.clues.length})`;
-    return egypt ? '제단의 비문에 답을 새겨라' : '단말기에 접속해 암호를 풀어라';
+    return egypt ? '제단의 비문에 답을 새겨라' : study ? '책상 위 번호 자물쇠를 풀어라' : '단말기에 접속해 암호를 풀어라';
   }
   if (mg && !mg.key_obtained) return `「${mg.title}」에 도전해 ${mg.reward}을(를) 얻어라`;
   if (mg && !mg.key_used) return `문으로 가서 ${mg.reward}을(를) 사용하라`;
@@ -95,7 +100,7 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
   const [clueDoc, setClueDoc] = useState<ClueDocData | null>(null);
   const [lastClue, setLastClue] = useState<ClueDocData | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
-  const [scare, setScare] = useState<'' | 'blackout' | 'rumble'>('');
+  const [scare, setScare] = useState<'' | 'blackout' | 'rumble' | 'ghost'>('');
   const [stamina, setStamina] = useState({ v: 1, ex: false });
   const [marks, setMarks] = useState<MapMark[]>([]);
   const [captions, setCaptions] = useState<Caption[]>([]);
@@ -163,7 +168,8 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
     if (!started || !state || aiNoticeRef.current === state.id) return;
     aiNoticeRef.current = state.id;
     const made = state.rooms.filter((r) => r.ai_generated).length;
-    if (made > 0) showToast(`🎲 이번 게임의 방 ${made}/${state.rooms.length}개는 AI가 새로 만들었어요`, 'info');
+    if (state.ai_note) showToast(`ℹ️ ${state.ai_note}`, 'info');
+    else if (made > 0) showToast(`🎲 이번 게임의 방 ${made}/${state.rooms.length}개는 AI가 새로 만들었어요`, 'info');
   }, [started, state, showToast]);
 
   // ---- 협동 소켓 ----
@@ -225,7 +231,8 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
   const showClue = useCallback((doc: ClueDocData) => {
     setClueDoc(doc);
     setLastClue(doc);
-    later('doc', () => setClueDoc(null), Math.max(6000, doc.text.length * 110));
+    // 전용 화면(휴대폰·달력·책장 등)은 더 오래 보여 준다. R 로 언제든 다시 볼 수 있다
+    later('doc', () => setClueDoc(null), Math.max(RICH_OBJECTS.includes(doc.object) ? 11000 : 6000, doc.text.length * 110));
   }, []);
 
   const inspect = useCallback(
@@ -354,6 +361,7 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
           startPosition: posRef.current,
           audio: audioRef.current,
           quality: st.quality,
+          dynamicRes: st.dynamicRes,
           sensitivity: st.sensitivity,
           fov: st.fov,
           motion: st.motion ? 1 : 0.2,
@@ -407,6 +415,10 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
   useEffect(() => engineRef.current?.setSensitivity(settings.sensitivity), [settings.sensitivity, loading]);
   useEffect(() => engineRef.current?.setFov(settings.fov), [settings.fov, loading]);
   useEffect(() => engineRef.current?.setMotion(settings.motion ? 1 : 0.2), [settings.motion, loading]);
+  useEffect(() => engineRef.current?.setDynamicRes(settings.dynamicRes), [settings.dynamicRes, loading]);
+  // 남은 시간 5분 / 1분 이하 → 화면 가장자리 맥동 (붉은 서재·공포)
+  const lowLevel = status === 'playing' && remaining > 0 ? (remaining <= 60 ? 2 : remaining <= 300 ? 1 : 0) : 0;
+  useEffect(() => engineRef.current?.setLowTime(lowLevel), [lowLevel, loading]);
 
   const others = useMemo(() => Object.values(players).filter((p) => p.id !== myId), [players, myId]);
   useEffect(() => {
@@ -426,6 +438,18 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
       const tg = e.target as HTMLElement;
       if (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA' || tg.tagName === 'SELECT') return;
       const cur = modalRef.current;
+      // ESC 로 마우스 고정이 풀린 뒤 클릭 없이 이어서 하기:
+      // 브라우저는 ESC 를 제외한 키 입력을 '사용자 동작'으로 인정하므로, 그 키를 누르는 순간 다시 고정할 수 있다.
+      const playing = stateRef.current?.status === 'playing' && startedRef.current;
+      if (playing && !pointerLockedRef.current && e.code !== 'Escape' && !MODIFIER_KEYS.has(e.key)) {
+        if (!cur) {
+          void engineRef.current?.lock(); // 창 없이 풀려 있음 (ESC 로 창을 닫은 직후 등) → 이 키로 바로 복귀
+        } else if (cur.kind === 'pause' && RESUME_KEYS.has(e.code)) {
+          e.preventDefault();
+          closeAndResume(); // 일시정지 메뉴에서 이동 키·Space·Enter → 계속하기
+          return;
+        }
+      }
       if (e.code === 'KeyM' || e.code === 'KeyI') {
         const k = e.code === 'KeyM' ? 'map' : 'inventory';
         if (cur?.kind === k) closeAndResume();
@@ -465,7 +489,7 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
     if (!state) return;
     setRestarting(true);
     try {
-      const s = await api.createSession(state.theme.key, state.room_count, state.time_limit_min);
+      const s = await api.createSession(state.theme.key, state.room_count, state.time_limit_min, state.difficulty ?? 'normal');
       send({ type: 'restart', session_id: s.id }); // 같은 방 팀원도 새 방으로
       onRestart(s.id);
     } catch (e) {
@@ -512,7 +536,10 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
 
       {/* HUD */}
       <div className="hud top-left">
-        <div className="timer-label">{copy.timerLabel}</div>
+        <div className="timer-label">
+          {copy.timerLabel}
+          {state.difficulty && <span className={`diff-badge ${state.difficulty}`}>{DIFFICULTY_LABEL[state.difficulty]}</span>}
+        </div>
         <div className={`timer ${lowTime ? 'warn' : ''}`}>{formatTime(remaining)}</div>
         <div className="hud-room">
           {currentSlot + 1}. {room?.name} {room?.status === 'cleared' ? '✓' : ''}
@@ -540,7 +567,7 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
         </div>
         <div className="row">
           <button onClick={() => openModal({ kind: 'inventory' })} title="인벤토리 (I)">
-            {kind === 'egypt' ? '📜' : '🗂'} <kbd>I</kbd>
+            {kind === 'egypt' ? '📜' : kind === 'study' ? '📓' : '🗂'} <kbd>I</kbd>
             {clueCount + keyCount > 0 && (
               <span className="badge">
                 {clueCount}
@@ -564,7 +591,7 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
       {loading && !waiting && (
         <div className="loading-screen">
           <div className="loading-spinner" />
-          <div>{kind === 'egypt' ? '무덤 안으로 들어가는 중…' : kind === 'horror' ? '시설에 접속하는 중…' : '방을 준비하는 중…'}</div>
+          <div>{kind === 'egypt' ? '무덤 안으로 들어가는 중…' : kind === 'horror' ? '시설에 접속하는 중…' : kind === 'study' ? '빗속에서 저택 문을 두드리는 중…' : '방을 준비하는 중…'}</div>
         </div>
       )}
 
@@ -655,7 +682,7 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
           kind={kind}
           copy={copy}
           remaining={remaining}
-          hintPenalty={hintPenalty}
+          hintPenalty={state.hint_penalty_sec ?? hintPenalty}
           onEscape={closeOnly}
           onClose={closeAndResume}
           onSolved={closeAndResume}

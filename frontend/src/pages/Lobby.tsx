@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { api } from '../api/client';
-import type { GameConfig, RoomBrief, ThemeSummary } from '../types';
+import { DIFFICULTY_LABEL } from '../types';
+import type { Difficulty, GameConfig, RoomBrief, ThemeSummary } from '../types';
 import type { JoinInfo } from '../App';
 import { glyphBandDataURL, noiseDataURL } from '../game/textures';
 
@@ -12,8 +13,9 @@ const NAME_KEY = 'escape-player-name';
 const TIME_PRESETS = [30, 60, 90, 120];
 const MINIGAME_LABEL = { sequence: '기억력', wires: '전선 연결', timing: '타이밍' } as const;
 const THEME_META: Record<string, { icon: string; mood: string; tags: string[] }> = {
+  study: { icon: '🕯️', mood: '추리 공포', tags: ['1998', '살인사건', '저택'] },
   server: { icon: '☣️', mood: '공포', tags: ['해킹', '바이러스', '어둠'] },
-  pillar: { icon: '🏺', mood: '모험', tags: ['고대 이집트', '수수께끼', '보물'] },
+  pillar: { icon: '🏺', mood: '모험', tags: ['파라오', '수수께끼', '보물'] },
   none: { icon: '🚪', mood: '커스텀', tags: ['AI 생성'] },
 };
 const NOISE = noiseDataURL(200, 0.6);
@@ -22,6 +24,17 @@ const GLYPH_BAND = glyphBandDataURL();
 
 /** 선택한 테마에 따라 바뀌는 로비 문구 */
 const LOBBY_COPY: Record<string, { badge: string; sub: string[]; start: string; features: { icon: string; title: string; text: string }[]; log?: string[] }> = {
+  study: {
+    badge: 'CASE FILE · 1998.11.17 · 23:47',
+    sub: ['비가 그치지 않던 밤, 와인 수집가 한도윤이 서재에서 숨진 채 발견됐다.', '그가 남긴 쪽지와 멈춘 시계가, 24년 전 사라진 동업자 J를 가리킨다.'],
+    start: '저택에 들어간다',
+    features: [
+      { icon: '📱', title: '피해자의 휴대폰', text: '잠금화면·통화 기록·메모를 직접 읽어라' },
+      { icon: '📖', title: '일기장과 책장', text: '지운 글씨와 금박 숫자 책에 길이 숨어 있다' },
+      { icon: '🕰️', title: '멈춘 시계', text: '11시 47분. 그가 쓰러진 순간이 열쇠다' },
+      { icon: '🖼️', title: '초상화', text: '액자를 너무 오래 바라보지 마라' },
+    ],
+  },
   server: {
     badge: '⚠ 격리 프로토콜 가동 중 · 생존자 신호 감지',
     sub: ['정신을 차려 보니 서버실 바닥이었다. 비상등만 붉게 깜빡인다.', '이 건물 안에, 당신 말고 무언가가 있다.'],
@@ -74,6 +87,22 @@ function saveName(v: string) {
   }
 }
 
+const DIFFICULTY_KEY = 'escape.difficulty';
+const DIFFICULTY_DESC: Record<Difficulty, string> = {
+  easy: '단서가 친절하고 힌트가 많아요 · 힌트 감점 절반',
+  normal: '단서를 조합해 규칙을 한 번 적용',
+  hard: '함정 단서와 여러 단계 추론 · 힌트 감점 1.5배',
+};
+function loadDifficulty(): Difficulty {
+  try {
+    const v = localStorage.getItem(DIFFICULTY_KEY);
+    if (v === 'easy' || v === 'normal' || v === 'hard') return v;
+  } catch {
+    /* 저장 불가 환경 */
+  }
+  return 'normal';
+}
+
 /** 세션에 실제로 배치될 방 (백엔드 select_rooms 와 동일 규칙: 입구·최종 고정, 중간은 순서대로) */
 function pickRooms<T>(rooms: T[], count: number): T[] {
   if (rooms.length < 2) return rooms;
@@ -95,6 +124,7 @@ export default function Lobby({ onJoin }: Props) {
   const [themeKey, setThemeKey] = useState('');
   const [roomCount, setRoomCount] = useState(4);
   const [timeMin, setTimeMin] = useState(60);
+  const [difficulty, setDifficulty] = useState<Difficulty>(loadDifficulty);
   const [joinCode, setJoinCode] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -127,6 +157,9 @@ export default function Lobby({ onJoin }: Props) {
 
   // 게임마다 AI 가 문제를 새로 만들면 방 이름·단서는 시작해야 알 수 있다
   const aiRandom = !!config?.ai_random_rooms;
+  const aiLeft = config?.ai_calls_left ?? null;
+  const aiLow = aiRandom && aiLeft !== null && aiLeft < roomCount; // 이번 게임을 AI 로 만들 한도가 부족
+  const aiShow = aiRandom && !aiLow; // 이번 게임 방을 AI 가 만들 예정 → 기본 방 이름 대신 'AI 생성' 표시
   const minigameCount = route.filter((r) => r.minigame).length;
   const clueCount = route.reduce((n, r) => n + r.clue_count, 0);
   const minPerRoom = Math.round(timeMin / Math.max(1, route.length));
@@ -142,6 +175,15 @@ export default function Lobby({ onJoin }: Props) {
     '--glyphs': `url(${GLYPH_BAND})`,
   } as CSSProperties;
 
+  function chooseDifficulty(d: Difficulty) {
+    setDifficulty(d);
+    try {
+      localStorage.setItem(DIFFICULTY_KEY, d);
+    } catch {
+      /* 저장 불가 환경 */
+    }
+  }
+
   function updateName(v: string) {
     setName(v);
     saveName(v);
@@ -153,7 +195,7 @@ export default function Lobby({ onJoin }: Props) {
     setBusy(true);
     setError('');
     try {
-      const s = await api.createSession(themeKey, roomCount, timeMin);
+      const s = await api.createSession(themeKey, roomCount, timeMin, difficulty);
       onJoin({ sessionId: s.id, playerName: playerName() });
     } catch (e) {
       setError((e as Error).message);
@@ -199,6 +241,14 @@ export default function Lobby({ onJoin }: Props) {
         <svg className="blood-drips" viewBox="0 0 1200 120" preserveAspectRatio="none" aria-hidden>
           <path d="M0 0H1200V18C1150 22 1140 70 1128 72 1116 74 1112 26 1060 24 1010 22 1000 96 986 98 972 100 968 30 900 26 840 22 836 58 826 60 816 62 806 24 740 22 680 20 676 110 662 112 648 114 640 30 560 26 500 22 496 64 486 66 476 68 466 24 400 22 340 20 330 84 318 86 306 88 300 28 230 24 170 20 164 50 156 52 148 54 140 22 80 20 30 18 24 76 14 78 6 80 2 30 0 24Z" />
         </svg>
+      )}
+      {decor === 'study' && (
+        <>
+          <div className="rain" aria-hidden />
+          <div className="lightning" aria-hidden />
+          <div className="candle-glow left" aria-hidden />
+          <div className="candle-glow right" aria-hidden />
+        </>
       )}
       {decor === 'pillar' && (
         <>
@@ -282,7 +332,7 @@ export default function Lobby({ onJoin }: Props) {
                         ))}
                       </span>
                       <span className="tcard-stats">
-                        {aiRandom ? `🚪 방 ${t.room_names.length} · 🎲 문제는 게임마다 AI 생성` : `🚪 방 ${t.room_names.length} · 🔎 단서 ${clues} · 🎮 미니게임 ${games}`}
+                        {aiShow ? `🚪 방 ${t.room_names.length} · 🎲 문제는 게임마다 AI 생성` : `🚪 방 ${t.room_names.length} · 🔎 단서 ${clues} · 🎮 미니게임 ${games}`}
                       </span>
                     </span>
                     {t.key === themeKey && <span className="tcard-check">✓</span>}
@@ -296,6 +346,19 @@ export default function Lobby({ onJoin }: Props) {
             </h2>
             {config && (
               <div className="settings">
+                <div className="setting">
+                  <span className="setting-label">
+                    문제 난이도 <b>{DIFFICULTY_LABEL[difficulty]}</b>{' '}
+                    <small className="muted">· {DIFFICULTY_DESC[difficulty]}</small>
+                  </span>
+                  <div className="segmented">
+                    {(['easy', 'normal', 'hard'] as Difficulty[]).map((d) => (
+                      <button key={d} className={d === difficulty ? 'on' : ''} onClick={() => chooseDifficulty(d)}>
+                        {DIFFICULTY_LABEL[d]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="setting">
                   <span className="setting-label">방 개수</span>
                   <div className="segmented">
@@ -336,7 +399,13 @@ export default function Lobby({ onJoin }: Props) {
               <div className="route2">
                 <div className="route2-head">
                   <span>탈출 경로</span>
-                  <small>{aiRandom ? '🎲 게임마다 AI가 새 문제를 만들어요' : `🔎 단서 ${clueCount} · 🎮 미니게임 ${minigameCount}`}</small>
+                  <small>
+                    {aiLow
+                      ? '⚠️ 오늘 AI 한도가 부족해 기본 방으로 진행돼요'
+                      : aiRandom
+                        ? '🎲 게임마다 AI가 새 문제를 만들어요'
+                        : `🔎 단서 ${clueCount} · 🎮 미니게임 ${minigameCount}`}
+                  </small>
                 </div>
                 <ol>
                   {route.map((r, i) => {
@@ -344,8 +413,8 @@ export default function Lobby({ onJoin }: Props) {
                     return (
                       <li key={`${r.name}-${i}`} className={last ? 'final' : ''} style={{ animationDelay: `${i * 70}ms` }}>
                         <span className="node">{last ? '🚪' : i + 1}</span>
-                        <span className="room-name">{aiRandom ? (last ? '최종 탈출 방 · AI 생성' : `${i + 1}번째 방 · AI 생성`) : r.name}</span>
-                        {!aiRandom && (
+                        <span className="room-name">{aiShow ? (last ? '최종 탈출 방 · AI 생성' : `${i + 1}번째 방 · AI 생성`) : r.name}</span>
+                        {!aiShow && (
                           <span className="room-icons">
                             {r.clue_count > 0 && <i title={`단서 ${r.clue_count}개`}>🔎{r.clue_count}</i>}
                             {r.has_puzzle && <i title="암호">🔐</i>}
@@ -360,7 +429,7 @@ export default function Lobby({ onJoin }: Props) {
             )}
 
             <button className="start-btn" disabled={busy || !themeKey} onClick={create}>
-              {busy ? (aiRandom ? `AI가 이번 게임의 방을 만드는 중... (최대 ${config?.ai_wait_sec ?? 30}초)` : '방을 준비하는 중...') : lc.start}
+              {busy ? (aiShow ? `AI가 이번 게임의 방을 만드는 중... (최대 ${config?.ai_wait_sec ?? 30}초)` : '방을 준비하는 중...') : lc.start}
             </button>
           </section>
 
@@ -417,6 +486,7 @@ export default function Lobby({ onJoin }: Props) {
             <span>
               AI 모드 <b>{config.ai_provider}</b>
               {config.ai_random_rooms && ' · 🎲 게임마다 새 문제'}
+              {aiLeft !== null && ` · 오늘 남은 AI 호출 ${aiLeft}회`}
             </span>
           )}
           <span>React · Three.js · FastAPI · WebSocket</span>

@@ -607,7 +607,24 @@ export function signPlate(text, kind = 'horror', seed = 14) {
   const c = makeCanvas(W, H);
   const ctx = c.getContext('2d');
   const R = mulberry32(seed);
-  if (kind === 'egypt') {
+  if (kind === 'study') {
+    // 붉은 서재: 짙은 나무판 위 놋쇠 명패
+    ctx.fillStyle = '#2a160c';
+    ctx.fillRect(0, 0, W, H);
+    const gr = ctx.createLinearGradient(0, 20, 0, H - 20);
+    gr.addColorStop(0, '#d8b46a');
+    gr.addColorStop(0.5, '#a07830');
+    gr.addColorStop(1, '#6a4a18');
+    ctx.fillStyle = gr;
+    roundRect(ctx, 24, 22, W - 48, H - 44, 10);
+    ctx.fill();
+    for (let i = 0; i < 14; i++) blot(ctx, R() * W, R() * H, 6 + R() * 20, '#3a2208', 0.25);
+    ctx.fillStyle = '#2a1606';
+    ctx.font = 'bold 40px "Gowun Batang", serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, W / 2, H / 2 + 2, W - 90);
+  } else if (kind === 'egypt') {
     ctx.fillStyle = '#b8945d';
     ctx.fillRect(0, 0, W, H);
     for (let i = 0; i < 30; i++) blot(ctx, R() * W, R() * H, 10 + R() * 40, R() < 0.5 ? '#7a5a30' : '#e0c58e', 0.2);

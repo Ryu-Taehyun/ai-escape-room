@@ -24,4 +24,4 @@ for /l %%i in (1,1,2) do (
 
 if /i "%~1"=="quiet" exit /b 0
 echo  AI Escape Room 서버를 종료했어요.
-timeout /t 3 >nul
+if not defined CI ping -n 3 127.0.0.1 >nul

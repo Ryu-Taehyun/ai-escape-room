@@ -15,7 +15,9 @@ from pathlib import Path
 
 import httpx
 
+from . import repository as repo
 from .config import settings
+from .ratelimit import RateLimiter
 from .schemas import RoomDraft
 
 log = logging.getLogger("ai")
@@ -81,6 +83,38 @@ class GeminiProvider(AIProvider):
 _PROVIDERS: dict[str, type[AIProvider]] = {"claude": ClaudeProvider, "gemini": GeminiProvider}
 
 
+# =====================================================================
+# 비용 보호: 실제 AI 호출은 모두 하루 한도(DB 기록)를 먼저 예약한다
+# =====================================================================
+_game_limiter = RateLimiter(limit=max(settings.AI_GAMES_PER_IP_HOUR, 1), window_sec=3600)
+_game_slots = asyncio.Semaphore(max(settings.AI_MAX_CONCURRENT_GAMES, 1))
+
+NOTE_DAILY = "오늘 AI 사용 한도를 모두 써서 이번 게임은 테마의 기본 방으로 진행합니다."
+NOTE_BUSY = "지금 다른 게임의 방을 AI가 만드는 중이라 이번 게임은 테마의 기본 방으로 진행합니다."
+
+
+def note_ip_limit(wait_sec: int) -> str:
+    return (
+        f"AI 방 생성은 같은 곳에서 1시간에 {settings.AI_GAMES_PER_IP_HOUR}번까지예요. "
+        f"이번 게임은 테마의 기본 방으로 진행합니다. (약 {max(1, wait_sec // 60)}분 뒤 다시 가능)"
+    )
+
+
+async def reserve_calls(n: int) -> bool:
+    """오늘 남은 한도에서 AI 호출 n 번 예약. 부족하면 False → 호출하지 말고 대체 경로 사용"""
+    ok = await asyncio.to_thread(repo.reserve_ai_calls, n, settings.AI_DAILY_LIMIT)
+    if not ok:
+        log.warning("AI 하루 한도(%d) 초과 → 대체 경로 사용", settings.AI_DAILY_LIMIT)
+    return ok
+
+
+def calls_left_today() -> int | None:
+    """오늘 남은 AI 호출 수. AI 를 안 쓰거나 한도가 없으면 None"""
+    if not settings.ai_enabled or settings.AI_DAILY_LIMIT <= 0:
+        return None
+    return max(0, settings.AI_DAILY_LIMIT - repo.ai_calls_today())
+
+
 def get_provider() -> AIProvider | None:
     """실제 LLM provider. 키가 없으면 None → mock 사용."""
     cls = _PROVIDERS.get(settings.AI_PROVIDER)
@@ -107,13 +141,14 @@ _RIDDLES = [
     ("항상 오고 있지만 결코 도착하지 않는 것은?", "내일", ["시간과 관련 있습니다.", "오늘이 지나면 ..."]),
 ]
 _MOOD = {
+    "study": ["촛불이 일렁이는", "창밖에 비가 쏟아지는", "오래된 와인 냄새가 밴"],
     "horror": ["깜빡이는 형광등 아래", "식은 공기가 감도는", "누군가 방금 떠난 듯한"],
     "egypt": ["모래 먼지가 흩날리는", "횃불이 일렁이는", "금빛 상형문자가 빛나는"],
 }
 
 
 _CLUE_SPOTS = [[-3.0, 2.4], [3.0, 2.2], [-4.2, -2.6], [2.8, -2.2], [0.0, 2.8]]
-_REWARDS = {"horror": ["보안 카드키", "비상 열쇠", "마스터 키"], "egypt": ["황금 열쇠", "스카라베 열쇠", "신전의 열쇠"]}
+_REWARDS = {"study": ["놋쇠 열쇠", "녹슨 열쇠", "검은 철문 열쇠"], "horror": ["보안 카드키", "비상 열쇠", "마스터 키"], "egypt": ["황금 열쇠", "스카라베 열쇠", "신전의 열쇠"]}
 _MINIGAME_TITLES = {"sequence": "불빛 순서 기억", "wires": "끊어진 회로 연결", "timing": "정밀 타이밍 해제"}
 
 
@@ -222,7 +257,7 @@ def mock_hint(room: dict, level: int) -> str:
 async def generate_room(theme: dict, order_idx: int, prompt: str = "") -> tuple[dict, str]:
     """방 초안 생성. (draft, source) 반환. source = 'claude' | 'gemini' | 'mock'"""
     provider = get_provider()
-    if provider:
+    if provider and await reserve_calls(1):
         try:
             user = load_prompt("generate_room").format(
                 theme_name=theme["name"],
@@ -241,7 +276,7 @@ async def generate_room(theme: dict, order_idx: int, prompt: str = "") -> tuple[
 
 async def generate_hint(room: dict, level: int) -> tuple[str, str]:
     provider = get_provider()
-    if provider:
+    if provider and await reserve_calls(1):
         try:
             user = load_prompt("hint").format(
                 room_name=room["name"],
@@ -267,8 +302,19 @@ async def generate_hint(room: dict, level: int) -> tuple[str, str]:
 _SAFE_SPOTS = [[-3.0, 2.4], [3.0, 2.2], [-4.2, -2.6], [2.8, -2.2], [0.0, 2.8]]
 _PUZZLE_KINDS = ["code", "cipher", "math", "riddle", "logic"]
 
+# 난이도별 출제 기준 (프롬프트에 그대로 들어감) + 미니게임 난이도 범위
+DIFFICULTY_GUIDE = {
+    "easy": ("쉬움: 단서 2~3개, 한 단계만 생각하면 풀리게 하세요. 단서를 그대로 조합하면 답이 나오고, "
+             "정답은 짧은 숫자나 쉬운 단어로. 힌트는 3개(마지막 힌트는 답에 매우 가깝게). 미니게임은 넣더라도 쉽게(difficulty 1~2)."),
+    "normal": ("보통: 단서 3개, 두 단계 추론(단서를 조합한 뒤 규칙을 한 번 적용). 힌트 2개. 미니게임 difficulty 2~3."),
+    "hard": ("어려움: 단서 3~4개 중 1개는 그럴듯하지만 계산에 쓰이지 않는 함정 단서로 하고, 세 단계 이상 추론이 필요하게 하세요 "
+             "(예: 숨은 값을 먼저 구한 뒤 규칙 적용 후 추가 조건). 힌트는 방향만 알려 주는 약한 것 1개. 미니게임 difficulty 4~5."),
+}
+_MINIGAME_RANGE = {"easy": (1, 2), "normal": (2, 3), "hard": (4, 5)}
+_HINT_LIMIT = {"easy": 3, "normal": 2, "hard": 1}
 
-def _sanitize_session_room(draft: dict, base: dict, is_final: bool) -> dict:
+
+def _sanitize_session_room(draft: dict, base: dict, is_final: bool, difficulty: str = "normal") -> dict:
     """AI 초안을 실제 게임에 넣을 수 있게 정리. 쓸 수 없으면 ValueError → 그 방은 기본 방 사용."""
     room = RoomDraft(**draft).model_dump()
     if not room["answer"].strip() and not room.get("minigame"):
@@ -289,14 +335,22 @@ def _sanitize_session_room(draft: dict, base: dict, is_final: bool) -> dict:
         room["hints"] = base["hints"][:1] or ["방 안의 단서를 다시 살펴보세요."]
     # 최종 방은 기본 방처럼 미니게임 → 열쇠 → 문 흐름을 유지
     if is_final and not room.get("minigame") and base.get("minigame"):
-        room["minigame"] = base["minigame"]
+        room["minigame"] = dict(base["minigame"])
+    # 난이도에 맞게: 미니게임 난이도 범위, 힌트 수 (AI 가 기준을 어겨도 게임은 난이도대로)
+    if room.get("minigame"):
+        lo, hi = _MINIGAME_RANGE.get(difficulty, (2, 3))
+        room["minigame"]["difficulty"] = max(lo, min(hi, int(room["minigame"].get("difficulty", 2))))
+    room["hints"] = room["hints"][: _HINT_LIMIT.get(difficulty, 2)]
     return room
 
 
-async def _generate_one(provider: AIProvider, theme: dict, base: dict, slot: int, is_final: bool, kind: str) -> dict:
+async def _generate_one(
+    provider: AIProvider, theme: dict, base: dict, slot: int, is_final: bool, kind: str, difficulty: str = "normal"
+) -> dict:
     request = (
         f"이번 게임만을 위한 새로운 방입니다. 기존 '{base['name']}' 과는 다른 소재와 퍼즐을 쓰세요. "
-        f"퍼즐 유형은 '{kind}' 로 하세요. (변화용 번호 {random.randint(1000, 9999)})"
+        f"퍼즐 유형은 '{kind}' 로 하세요. [난이도] {DIFFICULTY_GUIDE.get(difficulty, DIFFICULTY_GUIDE['normal'])} "
+        f"(변화용 번호 {random.randint(1000, 9999)})"
     )
     user = load_prompt("generate_room").format(
         theme_name=theme["name"],
@@ -305,19 +359,43 @@ async def _generate_one(provider: AIProvider, theme: dict, base: dict, slot: int
         prompt=request,
     )
     text = await provider.complete(load_prompt("system"), user, max_tokens=1500)
-    return _sanitize_session_room(_extract_json(text), base, is_final)
+    return _sanitize_session_room(_extract_json(text), base, is_final, difficulty)
 
 
-async def generate_session_rooms(theme: dict, rooms: list[dict]) -> dict[int, dict]:
+async def generate_session_rooms(
+    theme: dict, rooms: list[dict], client_key: str = "", difficulty: str = "normal"
+) -> tuple[dict[int, dict], str | None]:
     """게임 시작 시 각 방의 문제를 AI 로 새로 만든다 (동시에 요청).
-    {slot: 방 내용} 반환. 실패한 방은 빠지며, 그 방은 테마의 기본 방으로 진행된다."""
+    ({slot: 방 내용}, 건너뛴 이유) 반환. 실패한 방은 빠지며, 그 방은 테마의 기본 방으로 진행된다.
+
+    비용 보호 (넘으면 오류 없이 기본 방으로 진행하고 이유를 돌려준다):
+      1) 같은 IP 는 1시간에 AI_GAMES_PER_IP_HOUR 게임까지
+      2) 동시에 AI 로 만드는 게임은 AI_MAX_CONCURRENT_GAMES 개까지
+      3) 방 수만큼 하루 한도(AI_DAILY_LIMIT)를 미리 예약
+    """
     provider = get_provider()
     if not provider or not settings.AI_RANDOM_ROOMS:
-        return {}
+        return {}, None
+    if settings.AI_GAMES_PER_IP_HOUR > 0:
+        wait = _game_limiter.retry_after(client_key)
+        if wait:
+            return {}, note_ip_limit(wait)
+    if _game_slots.locked():
+        return {}, NOTE_BUSY
+    async with _game_slots:
+        if not await reserve_calls(len(rooms)):
+            return {}, NOTE_DAILY
+        _game_limiter.record(client_key)
+        return await _generate_rooms(provider, theme, rooms, difficulty), None
+
+
+async def _generate_rooms(provider: AIProvider, theme: dict, rooms: list[dict], difficulty: str = "normal") -> dict[int, dict]:
     kinds = random.sample(_PUZZLE_KINDS, k=len(_PUZZLE_KINDS))  # 방마다 다른 퍼즐 유형
     last = len(rooms) - 1
     tasks = {
-        asyncio.create_task(_generate_one(provider, theme, base, slot, slot == last, kinds[slot % len(kinds)])): slot
+        asyncio.create_task(
+            _generate_one(provider, theme, base, slot, slot == last, kinds[slot % len(kinds)], difficulty)
+        ): slot
         for slot, base in enumerate(rooms)
     }
     # 전체 대기 시간 상한: 늦은 방만 기본 방으로 두고, 먼저 끝난 방은 그대로 사용

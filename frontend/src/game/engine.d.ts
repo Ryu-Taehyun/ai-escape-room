@@ -51,6 +51,10 @@ export interface EngineOptions {
   /** 화면 흔들림 강도 0~1 (기본 1, 멀미 방지 시 낮춤) */
   motion?: number;
   quality?: 'low' | 'medium' | 'high';
+  /** 자동 해상도 (FPS 가 떨어지면 렌더 해상도를 낮춤, 기본 true) */
+  dynamicRes?: boolean;
+  /** 자동 해상도가 바뀌었을 때 (최대 대비 비율 0.5~1) */
+  onResolution?: (ratio: number) => void;
   sensitivity?: number;
   fov?: number;
   onMark?: (position: Vec3) => void;
@@ -63,8 +67,8 @@ export interface EngineOptions {
   onMove?: (e: MoveEvent) => void;
   onLockChange?: (locked: boolean) => void;
   onFocusChange?: (target: InteractTarget | null) => void;
-  /** 공포: 정전(blackout), 이집트: 지진(rumble) */
-  onScare?: (kind: 'blackout' | 'rumble') => void;
+  /** 공포·붉은 서재: 정전(blackout), 붉은 서재: 액자 귀신(ghost), 이집트: 지진(rumble) */
+  onScare?: (kind: 'blackout' | 'rumble' | 'ghost') => void;
 }
 
 export declare const ROOM_SIZE: number;
@@ -83,6 +87,9 @@ export declare class EscapeEngine {
   setSensitivity(v: number): void;
   releaseKeys(): void;
   setFov(v: number): void;
+  /** 남은 시간 경고 단계 0(없음) / 1(5분 이하) / 2(1분 이하) → 화면 맥동 */
+  setLowTime(level: number): void;
+  setDynamicRes(on: boolean): void;
   addMark(position: Vec3, name: string, color?: string): void;
   updateRemotePlayers(players: RemotePlayerInput[]): void;
   dispose(): void;

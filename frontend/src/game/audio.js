@@ -1,6 +1,7 @@
 // =====================================================================
 // GameAudio — Web Audio API 로 실시간 합성하는 배경음 / 효과음 (음원 파일 없음)
 //   horror: 저주파 드론, 형광등 웅웅거림, 멀리서 쿵/물방울/속삭임/삐걱임, 심장 박동
+//   study : 빗소리, 괘종시계 째깍임, 벽난로 타닥임, 낮은 현악풍 드론, 멀리서 문 두드리는 소리, 천둥 (리빌딩)
 //   egypt : 바람, 횃불 타닥임, 낮은 합창풍 드론, 돌 갈리는 소리, 모래 흘러내림
 // 브라우저 정책상 사용자 클릭 이후에 start() 를 호출해야 소리가 난다.
 // =====================================================================
@@ -63,6 +64,7 @@ export class GameAudio {
 
     if (this.kind === 'egypt') this._egyptAmbience();
     else if (this.kind === 'horror') this._horrorAmbience();
+    else if (this.kind === 'study') this._studyAmbience();
     else this._neutralAmbience();
     this._scheduleRandom();
     if (this.tension > 0) this._heartbeat();
@@ -212,6 +214,69 @@ export class GameAudio {
     room.start();
   }
 
+  _studyAmbience() {
+    const c = this.ctx;
+    // 창밖 빗소리: 넓은 대역의 쏴아 + 낮은 웅웅거림
+    const rain = this._noise(true);
+    const hp = c.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 900;
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 6500;
+    const rg = c.createGain();
+    rg.gain.value = 0.035;
+    rain.connect(hp).connect(lp).connect(rg).connect(this.amb);
+    rain.start();
+    this._lfo(0.07, 0.012, rg.gain);
+    const rumble = this._noise(true);
+    const rl = c.createBiquadFilter();
+    rl.type = 'lowpass';
+    rl.frequency.value = 180;
+    const rgl = c.createGain();
+    rgl.gain.value = 0.03;
+    rumble.connect(rl).connect(rgl).connect(this.amb);
+    rumble.start();
+    // 낮은 현악풍 드론 (단조)
+    for (const f of [55, 65.4, 82.4]) {
+      const o = c.createOscillator();
+      o.type = 'triangle';
+      o.frequency.value = f;
+      const g = c.createGain();
+      g.gain.value = 0.01;
+      o.connect(g).connect(this.amb);
+      o.start();
+      this._lfo(0.05 + Math.random() * 0.05, 0.006, g.gain);
+    }
+    // 괘종시계 째깍 (틱-톡)
+    let tick = 0;
+    const clock = () => {
+      this._burst({ type: 'bandpass', freq: tick % 2 ? 2100 : 2600, q: 8, gain: 0.03, decay: 0.03, pan: -0.4, dest: this.amb });
+      tick++;
+      this._later(clock, 1000);
+    };
+    clock();
+    // 벽난로 타닥임 (작게)
+    const crackle = () => {
+      if (Math.random() < 0.5) this._burst({ type: 'highpass', freq: 1800, gain: 0.008 + Math.random() * 0.02, decay: 0.02 + Math.random() * 0.03, pan: 0.5, dest: this.amb });
+      this._later(crackle, 80 + Math.random() * 260);
+    };
+    crackle();
+  }
+
+  _thunder(pan = 0, near = true) {
+    this._burst({ type: 'highpass', freq: 1200, gain: near ? 0.2 : 0.06, attack: 0.005, decay: 0.35, pan });
+    this._burst({ type: 'lowpass', freq: 140, gain: near ? 0.55 : 0.25, attack: 0.08, decay: 3.2, pan, delay: near ? 0.15 : 0.6 });
+    this._tone({ f0: 45, f1: 28, gain: near ? 0.25 : 0.1, attack: 0.1, decay: 2.5, delay: 0.2 });
+  }
+
+  _knock(pan) {
+    for (let i = 0; i < 3; i++) {
+      this._burst({ type: 'lowpass', freq: 420, gain: 0.22, decay: 0.12, pan, delay: i * 0.32 });
+      this._tone({ f0: 110, f1: 70, gain: 0.12, decay: 0.1, pan, delay: i * 0.32 });
+    }
+  }
+
   _egyptAmbience() {
     const c = this.ctx;
     // 바람
@@ -267,6 +332,12 @@ export class GameAudio {
         else if (pick < 0.6) { this._whisper(pan); this._caption(`[${side}누군가 속삭인다]`); }
         else if (pick < 0.8) { this._creak(pan); this._caption('[철제 구조물이 삐걱인다]'); }
         else { this._distantSteps(pan); this._caption(`[${side}어딘가에서 발소리]`); }
+      } else if (this.kind === 'study') {
+        if (pick < 0.22) { this._thunder(pan, false); this._caption('[멀리서 천둥이 울린다]'); }
+        else if (pick < 0.42) { this._creak(pan); this._caption(`[${side}마룻바닥이 삐걱인다]`); }
+        else if (pick < 0.6) { this._whisper(pan); this._caption(`[${side}누군가 속삭인다]`); }
+        else if (pick < 0.78) { this._knock(pan); this._caption(`[${side}똑, 똑, 똑 — 문 두드리는 소리]`); }
+        else { this._distantSteps(pan); this._caption('[위층에서 발소리]'); }
       } else if (this.kind === 'egypt') {
         if (pick < 0.3) { this._burst({ type: 'lowpass', freq: 120, gain: 0.18, attack: 0.6, decay: 2.2, pan }); this._caption('[땅속 깊은 곳의 울림]'); }
         else if (pick < 0.55) { this._burst({ type: 'highpass', freq: 3500, gain: 0.04, attack: 0.3, decay: 1.6, pan }); this._caption('[모래가 흘러내린다]'); }
@@ -435,7 +506,11 @@ export class GameAudio {
         else for (let i = 0; i < 3; i++) this._burst({ type: 'bandpass', freq: 900, q: 4, gain: 0.12, decay: 0.06, delay: i * 0.08 });
         break;
       case 'door':
-        if (egypt) {
+        if (this.kind === 'study') {
+          // 낡은 나무 문: 길게 끌리는 삐걱임
+          this._burst({ type: 'bandpass', freq: 700, sweepTo: 1600, q: 9, gain: 0.12, attack: 0.1, decay: 1.3 });
+          this._burst({ type: 'bandpass', freq: 1500, sweepTo: 900, q: 9, gain: 0.08, attack: 0.1, decay: 0.8, delay: 0.9 });
+        } else if (egypt) {
           this._stoneGrind(0, 0.35);
           this._burst({ type: 'lowpass', freq: 90, gain: 0.35, attack: 0.2, decay: 2 });
         } else {
@@ -451,6 +526,9 @@ export class GameAudio {
       case 'rumble':
         this._burst({ type: 'lowpass', freq: 85, gain: 0.5, attack: 0.15, decay: 2.4 });
         this._burst({ type: 'highpass', freq: 3800, gain: 0.06, attack: 0.5, decay: 1.8 });
+        break;
+      case 'thunder':
+        this._thunder((Math.random() - 0.5) * 0.6, true);
         break;
       case 'spark':
         for (let i = 0; i < 3; i++) this._burst({ type: 'highpass', freq: 3000, gain: 0.08, decay: 0.03, delay: i * 0.05 * Math.random() });

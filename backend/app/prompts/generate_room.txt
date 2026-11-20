@@ -18,7 +18,7 @@
   "answer": "정답 (여러 표현 허용 시 '|' 로 구분)",
   "hints": ["약한 힌트", "강한 힌트"],
   "clues": [
-    {{"id": "영문소문자id", "label": "오브젝트 이름", "object": "note | board | book | tablet | statue | jar | box", "pos": [x, z], "text": "조사 시 보이는 내용"}}
+    {{"id": "영문소문자id", "label": "오브젝트 이름", "object": "note | board | book | tablet | statue | jar | box (붉은 서재 테마라면 phone | diary | calendar | clock | bookshelf | portrait | body 도 가능)", "pos": [x, z], "text": "조사 시 보이는 내용"}}
   ],
   "minigame": null 또는 {{"type": "sequence | wires | timing", "title": "미니게임 이름", "description": "설명", "reward": "열쇠 이름", "difficulty": 1~5}}
 }}

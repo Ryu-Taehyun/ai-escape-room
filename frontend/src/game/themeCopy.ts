@@ -1,8 +1,8 @@
 // 테마별 화면 문구 (공포 / 이집트 / 기본)
-export type ThemeKind = 'horror' | 'egypt' | 'neutral';
+export type ThemeKind = 'study' | 'horror' | 'egypt' | 'neutral';
 
 export function themeKind(decor?: string): ThemeKind {
-  return decor === 'server' ? 'horror' : decor === 'pillar' ? 'egypt' : 'neutral';
+  return decor === 'study' ? 'study' : decor === 'server' ? 'horror' : decor === 'pillar' ? 'egypt' : 'neutral';
 }
 
 export interface ThemeCopy {
@@ -46,6 +46,51 @@ export interface ThemeCopy {
 }
 
 export const COPY: Record<ThemeKind, ThemeCopy> = {
+  // 붉은 서재: 팀원 프로젝트의 이야기(1998년, 한도윤, J)를 그대로 가져옴
+  study: {
+    introEyebrow: 'CASE FILE · 1998.11.17',
+    introTitle: '11시 47분, 그의 시계는 멈췄다',
+    introLines: [
+      '비가 그치지 않던 밤. 사립 탐정인 당신에게 와인 수집가 한도윤의 다급한 전화가 걸려 왔다.',
+      '"J가… 24년 전에 사라진 내 동업자가 오늘 밤 나를 죽이러 옵니다. 서재로 와 주세요."',
+      '자정 무렵 저택에 도착했을 때, 집 안은 고요했고 문마다 자물쇠가 걸려 있었다.',
+      '그가 남긴 단서를 모아 지하를 지나 저택을 빠져나가라. 경찰이 오기 전에.',
+    ],
+    introAction: '클릭해서 저택에 들어선다',
+    controls: 'WASD 이동 · Shift 달리기 · C 웅크리기 · E 조사 · F 손전등 · I 수첩 · M 저택 평면도',
+    focusVerb: { puzzle: '자물쇠를 돌린다', clue: '조사한다', minigame: '만져 본다', door: '문고리를 잡는다' },
+    puzzleSystem: '놋쇠 번호 자물쇠',
+    puzzleBoot: (room) => [room, '차가운 놋쇠 다이얼에 피 묻은 지문이 남아 있다.', '맞는 번호를 맞춰야 열린다.'],
+    prompt: '🗝',
+    inputPlaceholder: '번호를 맞춘다',
+    submit: '돌린다',
+    hint: '속삭임',
+    close: '물러선다',
+    granted: '찰칵 — 자물쇠가 풀렸다',
+    denied: '다이얼이 헛돈다 — 어딘가에서 누군가 웃는다',
+    solvedNeedKey: (r) => `자물쇠는 풀렸다. 하지만 문은 ${r} 없이는 열리지 않는다.`,
+    hintLabel: '속삭임',
+    cluesHeader: '수첩에 적은 단서',
+    cluesMissing: '아직 조사하지 않은 것이 이 방 어딘가에 있다.',
+    clueNew: '수첩에 기록',
+    clueOld: '이미 기록함',
+    doorLocked: '문이 잠겨 있다. 손잡이가 꿈쩍도 하지 않는다',
+    needPuzzle: '번호 자물쇠',
+    minigameFrame: '저택의 장치',
+    minigameStart: '손을 댄다',
+    minigameRetry: '다시 해 본다',
+    minigameDone: '이미 열쇠를 손에 넣었다. 문으로 가서 E.',
+    inventoryTitle: '탐정 수첩',
+    inventoryEmpty: '아직 적은 것이 없다. 반짝이는 물건을 조사해 보자.',
+    mapTitle: '한 저택 평면도',
+    escapedTitle: '탈출 성공',
+    escapedText: '철문 너머로 새벽이 밝아온다. 등 뒤의 저택은 다시 침묵에 잠긴다.',
+    failedTitle: '시간 초과',
+    failedText: '촛불이 모두 꺼졌다. 어둠 속에서 누군가 네 이름을 불렀다.',
+    toLobby: '처음으로',
+    timerLabel: '경찰 도착까지',
+    scareText: '…뒤에 누가 있어',
+  },
   horror: {
     introEyebrow: '경고 — 격리 프로토콜 가동 중',
     introTitle: '눈을 떴다. 서버실 바닥이었다.',

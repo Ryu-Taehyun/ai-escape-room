@@ -14,6 +14,7 @@ export interface Settings {
   quality: Quality;
   captions: boolean; // 소리 자막
   showFps: boolean;
+  dynamicRes: boolean; // 자동 해상도 (프레임이 떨어지면 해상도를 낮춤)
 }
 
 const KEY = 'escape-settings-v1';
@@ -32,6 +33,7 @@ function defaults(): Settings {
     quality: weak ? 'low' : 'medium',
     captions: false,
     showFps: false,
+    dynamicRes: true,
   };
 }
 

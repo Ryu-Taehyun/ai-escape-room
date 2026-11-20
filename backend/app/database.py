@@ -54,7 +54,9 @@ CREATE TABLE IF NOT EXISTS game_sessions (
     ended_at       TEXT,
     status         TEXT NOT NULL DEFAULT 'playing',  -- waiting | playing | escaped | failed
     hints_used     INTEGER NOT NULL DEFAULT 0,
-    extra_seconds  INTEGER NOT NULL DEFAULT 0          -- 관리자가 추가/차감한 시간
+    extra_seconds  INTEGER NOT NULL DEFAULT 0,         -- 관리자가 추가/차감한 시간
+    ai_note        TEXT,                               -- AI 방 생성을 건너뛴 이유 (한도 초과 등)
+    difficulty     TEXT NOT NULL DEFAULT 'normal'      -- easy | normal | hard
 );
 
 CREATE TABLE IF NOT EXISTS session_rooms (
@@ -82,6 +84,11 @@ CREATE TABLE IF NOT EXISTS session_items (
     used        INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL,
     UNIQUE (session_id, slot, kind, ref_id)
+);
+
+CREATE TABLE IF NOT EXISTS ai_usage (
+    day         TEXT PRIMARY KEY,       -- 서버 현지 날짜 (YYYY-MM-DD)
+    calls       INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS edit_logs (
@@ -145,6 +152,11 @@ def _migrate_columns(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE rooms ADD COLUMN clues_json TEXT NOT NULL DEFAULT '[]'")
         if "minigame_json" not in room_cols:
             conn.execute("ALTER TABLE rooms ADD COLUMN minigame_json TEXT NOT NULL DEFAULT 'null'")
+    gs_cols = _columns(conn, "game_sessions")
+    if gs_cols and "ai_note" not in gs_cols:
+        conn.execute("ALTER TABLE game_sessions ADD COLUMN ai_note TEXT")
+    if gs_cols and "difficulty" not in gs_cols:
+        conn.execute("ALTER TABLE game_sessions ADD COLUMN difficulty TEXT NOT NULL DEFAULT 'normal'")
     sr_cols = _columns(conn, "session_rooms")
     if sr_cols:
         if "puzzle_solved" not in sr_cols:
@@ -164,12 +176,21 @@ def _room_values(room: dict) -> tuple:
     )
 
 
+# 이전 버전의 기본 테마 이름 → 바뀐 이름 (관리자가 직접 바꾼 이름은 건드리지 않음)
+_OLD_THEME_NAMES = {"horror": "공포 - 감염된 데이터센터", "egypt": "이집트 - 파라오의 피라미드"}
+
+
 def _refresh_seed_rooms(conn: sqlite3.Connection) -> None:
-    """관리자/AI 가 수정하지 않은(source='seed') 기본 방은 최신 시드 내용으로 갱신."""
+    """관리자/AI 가 수정하지 않은(source='seed') 기본 방은 최신 시드 내용으로 갱신.
+    새로 추가된 기본 테마(예: 붉은 서재)는 기존 DB 에도 넣는다."""
     for theme in THEMES:
         row = conn.execute("SELECT id FROM themes WHERE key = ?", (theme["key"],)).fetchone()
         if not row:
+            _insert_theme(conn, theme, now_iso())
             continue
+        old = _OLD_THEME_NAMES.get(theme["key"])
+        if old:
+            conn.execute("UPDATE themes SET name = ? WHERE id = ? AND name = ?", (theme["name"], row["id"], old))
         for idx, room in enumerate(theme["rooms"]):
             conn.execute(
                 """UPDATE rooms SET name = ?, description = ?, puzzle_type = ?, question = ?, answer = ?,
@@ -182,15 +203,19 @@ def _refresh_seed_rooms(conn: sqlite3.Connection) -> None:
 def _seed(conn: sqlite3.Connection) -> None:
     ts = now_iso()
     for theme in THEMES:
-        cur = conn.execute(
-            "INSERT INTO themes (key, name, description, style_json, updated_at) VALUES (?, ?, ?, ?, ?)",
-            (theme["key"], theme["name"], theme["description"], json.dumps(theme["style"]), ts),
+        _insert_theme(conn, theme, ts)
+
+
+def _insert_theme(conn: sqlite3.Connection, theme: dict, ts: str) -> None:
+    cur = conn.execute(
+        "INSERT INTO themes (key, name, description, style_json, updated_at) VALUES (?, ?, ?, ?, ?)",
+        (theme["key"], theme["name"], theme["description"], json.dumps(theme["style"]), ts),
+    )
+    theme_id = cur.lastrowid
+    for idx, room in enumerate(theme["rooms"]):
+        conn.execute(
+            """INSERT INTO rooms (theme_id, order_idx, name, description, puzzle_type, question, answer,
+                                  hints_json, clues_json, minigame_json, source, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'seed', ?)""",
+            (theme_id, idx, *_room_values(room), ts),
         )
-        theme_id = cur.lastrowid
-        for idx, room in enumerate(theme["rooms"]):
-            conn.execute(
-                """INSERT INTO rooms (theme_id, order_idx, name, description, puzzle_type, question, answer,
-                                      hints_json, clues_json, minigame_json, source, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'seed', ?)""",
-                (theme_id, idx, *_room_values(room), ts),
-            )

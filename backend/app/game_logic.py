@@ -16,6 +16,7 @@ from . import minigames
 from . import repository as repo
 from .config import settings
 from .database import now_iso
+from .seed_variants import VARIANTS
 
 
 class GameError(Exception):
@@ -48,6 +49,40 @@ def has_minigame(room: dict) -> bool:
     return bool(room.get("minigame"))
 
 
+# ---------- 난이도 ----------
+def hint_penalty(difficulty: str) -> int:
+    """힌트 1회당 줄어드는 시간(초): 기본값 × 난이도 배율 (쉬움 0.5 / 보통 1 / 어려움 1.5)"""
+    return int(round(settings.HINT_PENALTY_SEC * settings.HINT_PENALTY_RATE.get(difficulty, 1.0)))
+
+
+def shift_minigame(minigame: Optional[dict], difficulty: str) -> Optional[dict]:
+    """미니게임 난이도(1~5)를 게임 난이도에 맞게 조정: 쉬움 -1, 어려움 +1"""
+    if not minigame:
+        return minigame
+    delta = {"easy": -1, "hard": 1}.get(difficulty, 0)
+    return {**minigame, "difficulty": max(1, min(5, int(minigame.get("difficulty", 2)) + delta))}
+
+
+def difficulty_room(theme_key: str, room: dict, difficulty: str) -> Optional[dict]:
+    """이 난이도에서 기본 방 대신 쓸 방 내용 (보통이면 None = 기본 방 그대로).
+    - 수정하지 않은 기본 방(seed): seed_variants.py 에 준비된 쉬움/어려움 문제
+    - 관리자가 고쳤거나 새로 만든 방: 같은 문제에 힌트 수와 미니게임 난이도만 조정
+    """
+    if difficulty not in ("easy", "hard"):
+        return None
+    variants = VARIANTS.get(theme_key, [])
+    if room.get("source") == "seed" and room["order_idx"] < len(variants):
+        override = dict(variants[room["order_idx"]].get(difficulty, {}))
+        if "minigame" not in override and room.get("minigame"):
+            override["minigame"] = shift_minigame(room["minigame"], difficulty)
+    else:
+        override = {"minigame": shift_minigame(room.get("minigame"), difficulty)}
+        if difficulty == "hard":
+            override["hints"] = room["hints"][:1]
+    override["_variant"] = difficulty  # AI 가 만든 방과 구분하는 표시
+    return override
+
+
 # ---------- 세션 ----------
 def _new_session_id() -> str:
     while True:
@@ -68,15 +103,24 @@ def plan_session(theme_key: str, room_count: int, time_limit_min: int) -> tuple[
 
 def create_session(
     theme_key: str, room_count: int, time_limit_min: int, start_now: bool = True,
-    room_overrides: Optional[dict[int, dict]] = None,
+    room_overrides: Optional[dict[int, dict]] = None, ai_note: Optional[str] = None, difficulty: str = "normal",
 ) -> str:
     """start_now=False 면 대기실(waiting) 상태로 만들고, 모두 준비하면 start_session 으로 시작한다.
-    room_overrides: {slot: 방 내용} - AI 가 이 게임용으로 새로 만든 방 (없는 칸은 테마의 기본 방)"""
+    room_overrides: {slot: 방 내용} - AI 가 이 게임용으로 새로 만든 방 (이미 난이도 반영)
+    AI 방이 없는 칸은 테마의 기본 방을 쓰되, 난이도에 맞는 문제로 바꾼다."""
+    if difficulty not in settings.DIFFICULTIES:
+        raise GameError("난이도는 easy / normal / hard 중 하나여야 합니다.")
     theme, rooms = plan_session(theme_key, room_count, time_limit_min)
+    overrides = dict(room_overrides or {})
+    for slot, room in enumerate(rooms):
+        if slot not in overrides:
+            variant = difficulty_room(theme["key"], room, difficulty)
+            if variant:
+                overrides[slot] = variant
     sid = _new_session_id()
     repo.create_session(
         sid, theme["id"], [r["id"] for r in rooms], time_limit_min, "playing" if start_now else "waiting",
-        room_overrides,
+        overrides, ai_note, difficulty,
     )
     return sid
 
@@ -162,7 +206,7 @@ def get_state(session_id: str) -> dict:
                 "puzzle_solved": bool(s["puzzle_solved"]),
                 "status": s["status"],
                 "is_final": s["slot"] == len(slots) - 1,
-                "ai_generated": bool(s.get("room_json")),
+                "ai_generated": bool(s.get("room_json")) and not room.get("_variant"),
                 "hint_count": len(room["hints"]),
                 "cleared_by": s["cleared_by"],
                 "cleared_at": s["cleared_at"],
@@ -202,6 +246,9 @@ def get_state(session_id: str) -> dict:
         "started_at": session["started_at"],
         "ended_at": session["ended_at"],
         "hints_used": session["hints_used"],
+        "ai_note": session.get("ai_note"),
+        "difficulty": session.get("difficulty") or "normal",
+        "hint_penalty_sec": hint_penalty(session.get("difficulty") or "normal"),
         "rooms": rooms_public,
         "inventory": [
             {"kind": i["kind"], "slot": i["slot"], "ref_id": i["ref_id"], "name": i["name"],
@@ -325,13 +372,15 @@ def use_key(session_id: str, slot: int, player_name: str) -> tuple[str, bool]:
     return f"🔑 '{key['name']}' 사용! 이제 단말기의 암호만 풀면 됩니다.", False
 
 
-def get_room_for_hint(session_id: str, slot: int) -> dict:
+def get_room_for_hint(session_id: str, slot: int) -> tuple[dict, int]:
+    """(방, 이번 힌트로 줄어든 시간(초))"""
     session = _require_playing(session_id)
     _, room = _open_slot(session_id, slot)
     repo.increment_hints(session_id)
-    if settings.HINT_PENALTY_SEC > 0:  # 힌트 1회당 제한 시간 감점
-        repo.update_session(session_id, {"extra_seconds": session["extra_seconds"] - settings.HINT_PENALTY_SEC})
-    return room
+    penalty = hint_penalty(session.get("difficulty") or "normal")
+    if penalty > 0:  # 힌트 1회당 제한 시간 감점 (난이도별 배율)
+        repo.update_session(session_id, {"extra_seconds": session["extra_seconds"] - penalty})
+    return room, penalty
 
 
 # ---------- 관리자 세션 조작 ----------

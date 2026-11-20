@@ -1,4 +1,5 @@
 // 결과 화면: 방별 걸린 시간, 팀원별 기여, 같은 설정으로 다시 하기
+import { DIFFICULTY_LABEL } from '../types';
 import type { SessionState } from '../types';
 import type { ThemeCopy } from '../game/themeCopy';
 import { formatTime } from '../utils';
@@ -53,6 +54,7 @@ export default function ResultScreen({ state, remaining, copy, onRestart, onExit
     <div className={`overlay result-overlay ${state.status}`}>
       <div className="panel result">
         <h1>{escaped ? copy.escapedTitle : copy.failedTitle}</h1>
+        <span className={`diff-badge ${state.difficulty ?? 'normal'}`}>난이도 {DIFFICULTY_LABEL[state.difficulty ?? 'normal']}</span>
         {(escaped ? copy.escapedText : copy.failedText) && <p className="result-text">{escaped ? copy.escapedText : copy.failedText}</p>}
 
         <div className="result-kpis">

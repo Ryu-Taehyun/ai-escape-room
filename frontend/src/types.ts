@@ -1,3 +1,6 @@
+export type Difficulty = 'easy' | 'normal' | 'hard';
+export const DIFFICULTY_LABEL: Record<Difficulty, string> = { easy: '쉬움', normal: '보통', hard: '어려움' };
+
 // 백엔드 schemas.py 와 1:1 대응
 
 export type RoomStatus = 'locked' | 'unlocked' | 'cleared';
@@ -11,7 +14,7 @@ export interface ThemeStyle {
   fog: string;
   accent: string;
   ambient: number;
-  decor: 'server' | 'pillar' | 'none';
+  decor: 'study' | 'server' | 'pillar' | 'none';
 }
 
 export interface ThemeSummary {
@@ -45,9 +48,13 @@ export interface GameConfig {
   ai_random_rooms: boolean;
   /** 방 생성 최대 대기 시간(초) */
   ai_wait_sec: number;
+  /** 오늘 남은 AI 호출 수 (한도 없음/AI 없음이면 null) */
+  ai_calls_left?: number | null;
 }
 
-export type ClueObject = 'note' | 'board' | 'book' | 'tablet' | 'statue' | 'jar' | 'box';
+export type ClueObject = 'note' | 'board' | 'book' | 'tablet' | 'statue' | 'jar' | 'box'
+  // 붉은 서재 전용 (전용 3D 모델 + 전용 조사 화면)
+  | 'phone' | 'diary' | 'calendar' | 'clock' | 'bookshelf' | 'portrait' | 'body';
 export type MinigameType = 'sequence' | 'wires' | 'timing';
 
 export interface ClueState {
@@ -109,6 +116,12 @@ export interface SessionState {
   started_at: string | null;
   ended_at: string | null;
   hints_used: number;
+  /** AI 방 생성을 건너뛴 이유 (하루 한도·생성 횟수 제한 등) */
+  ai_note?: string | null;
+  /** 난이도 */
+  difficulty?: Difficulty;
+  /** 이 게임의 힌트 1회 감점(초) - 난이도별 */
+  hint_penalty_sec?: number;
   rooms: SessionRoom[];
   inventory: InventoryItem[];
 }

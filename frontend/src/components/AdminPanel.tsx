@@ -150,8 +150,9 @@ function ConceptEditor({ theme, token, run }: { theme: ThemeFull; token: string;
         <label>
           장식
           <select value={style.decor} onChange={(e) => setStyle({ ...style, decor: e.target.value as ThemeStyle['decor'] })}>
+            <option value="study">study (붉은 서재)</option>
             <option value="server">server (공포)</option>
-            <option value="pillar">pillar (이집트)</option>
+            <option value="pillar">pillar (파라오)</option>
             <option value="none">none</option>
           </select>
         </label>
@@ -172,7 +173,7 @@ function ConceptEditor({ theme, token, run }: { theme: ThemeFull; token: string;
   );
 }
 
-const CLUE_OBJECTS: ClueObject[] = ['note', 'board', 'book', 'tablet', 'statue', 'jar', 'box'];
+const CLUE_OBJECTS: ClueObject[] = ['note', 'board', 'book', 'tablet', 'statue', 'jar', 'box', 'phone', 'diary', 'calendar', 'clock', 'bookshelf', 'portrait', 'body'];
 const MINIGAME_TYPES: [MinigameType, string][] = [
   ['sequence', '기억력 (순서 기억)'],
   ['wires', '전선 연결'],

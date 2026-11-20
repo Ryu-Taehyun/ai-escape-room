@@ -44,7 +44,7 @@ export default function PauseMenu({ settings, copy, onChange, onReset, onResume,
       <b>{fmt(settings[key])}</b>
     </label>
   );
-  const toggle = (key: 'muted' | 'motion' | 'captions' | 'showFps', label: string, hint: string) => (
+  const toggle = (key: 'muted' | 'motion' | 'captions' | 'showFps' | 'dynamicRes', label: string, hint: string) => (
     <label className="pm-toggle" htmlFor={`pm-${key}`}>
       <input id={`pm-${key}`} type="checkbox" checked={settings[key]} onChange={(e) => onChange(key, e.target.checked)} />
       <span>
@@ -63,7 +63,7 @@ export default function PauseMenu({ settings, copy, onChange, onReset, onResume,
           <small>{copy.timerLabel} 타이머는 계속 흐릅니다</small>
         </div>
         <button className="primary pause-resume" autoFocus onClick={onResume}>
-          ▶ 계속하기
+          ▶ 계속하기 <small className="muted">· 이동 키·Space·Enter</small>
         </button>
 
         <div className="tabs">
@@ -101,6 +101,7 @@ export default function PauseMenu({ settings, copy, onChange, onReset, onResume,
                   </button>
                 ))}
               </div>
+              {toggle('dynamicRes', '자동 해상도', '프레임이 떨어지면 해상도를 잠시 낮춰 부드럽게 유지')}
               {toggle('showFps', 'FPS 표시', '오른쪽 아래에 초당 프레임 수')}
             </section>
           </div>

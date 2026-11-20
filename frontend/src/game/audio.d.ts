@@ -1,9 +1,9 @@
 export type SfxName =
   | 'step' | 'clue' | 'type' | 'open' | 'success' | 'fail' | 'key'
-  | 'locked' | 'door' | 'scare' | 'rumble' | 'spark' | 'breath' | 'mark';
+  | 'locked' | 'door' | 'scare' | 'rumble' | 'spark' | 'breath' | 'mark' | 'thunder';
 
 export declare class GameAudio {
-  constructor(kind?: 'horror' | 'egypt' | 'neutral');
+  constructor(kind?: 'study' | 'horror' | 'egypt' | 'neutral');
   readonly kind: string;
   muted: boolean;
   start(): void;
