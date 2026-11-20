@@ -1,3 +1,6 @@
+export type Difficulty = 'easy' | 'normal' | 'hard';
+export const DIFFICULTY_LABEL: Record<Difficulty, string> = { easy: '쉬움', normal: '보통', hard: '어려움' };
+
 // 백엔드 schemas.py 와 1:1 대응
 
 export type RoomStatus = 'locked' | 'unlocked' | 'cleared';
@@ -113,6 +116,10 @@ export interface SessionState {
   hints_used: number;
   /** AI 방 생성을 건너뛴 이유 (하루 한도·생성 횟수 제한 등) */
   ai_note?: string | null;
+  /** 난이도 */
+  difficulty?: Difficulty;
+  /** 이 게임의 힌트 1회 감점(초) - 난이도별 */
+  hint_penalty_sec?: number;
   rooms: SessionRoom[];
   inventory: InventoryItem[];
 }

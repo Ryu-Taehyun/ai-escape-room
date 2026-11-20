@@ -47,10 +47,10 @@ def list_themes():
 
 def _create_session_sync(body: CreateSessionRequest, overrides: dict[int, dict], note: str | None) -> dict:
     sid = game_logic.create_session(
-        body.theme_key, body.room_count, body.time_limit_min, body.start_now, overrides, note
+        body.theme_key, body.room_count, body.time_limit_min, body.start_now, overrides, note, body.difficulty
     )
     if overrides:
-        repo.add_log("ai", "session", sid, {"action": "random_rooms", "slots": sorted(overrides)})
+        repo.add_log("ai", "session", sid, {"action": "random_rooms", "slots": sorted(overrides), "difficulty": body.difficulty})
     return game_logic.get_state(sid)
 
 
@@ -60,7 +60,7 @@ async def create_session(body: CreateSessionRequest, request: Request):
     # API 키가 있으면 이번 게임의 방 문제를 AI 가 새로 만든다 (실패한 방·한도 초과면 테마의 기본 방)
     overrides, note = {}, None
     if settings.ai_random_rooms:
-        overrides, note = await ai_service.generate_session_rooms(theme, rooms, client_ip(request))
+        overrides, note = await ai_service.generate_session_rooms(theme, rooms, client_ip(request), body.difficulty)
     return await asyncio.to_thread(_create_session_sync, body, overrides, note)
 
 
@@ -149,10 +149,10 @@ async def use_key(slot: int, body: PlayerAction, sid: str = Depends(session_sid)
 
 @router.post("/sessions/{session_id}/rooms/{slot}/hint", response_model=HintResponse)
 async def request_hint(slot: int, body: HintRequest, sid: str = Depends(session_sid)):
-    room = await asyncio.to_thread(game_logic.get_room_for_hint, sid, slot)
+    room, penalty = await asyncio.to_thread(game_logic.get_room_for_hint, sid, slot)
     hint, source = await ai_service.generate_hint(room, body.level)
     await manager.broadcast(sid, {"type": "hint_used", "slot": slot, "level": body.level})
-    if settings.HINT_PENALTY_SEC > 0:
-        await manager.chat(sid, None, f"💡 힌트 사용 — 제한 시간 {settings.HINT_PENALTY_SEC}초 감소")
+    if penalty > 0:
+        await manager.chat(sid, None, f"💡 힌트 사용 — 제한 시간 {penalty}초 감소")
         await manager.broadcast(sid, {"type": "state_changed", "reason": "hint"})
-    return {"hint": hint, "level": body.level, "total": len(room["hints"]), "source": source, "penalty_sec": settings.HINT_PENALTY_SEC}
+    return {"hint": hint, "level": body.level, "total": len(room["hints"]), "source": source, "penalty_sec": penalty}

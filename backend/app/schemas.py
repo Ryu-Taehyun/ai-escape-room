@@ -78,6 +78,7 @@ class CreateSessionRequest(BaseModel):
     room_count: int = Field(settings.DEFAULT_ROOMS, ge=settings.MIN_ROOMS, le=settings.MAX_ROOMS)
     time_limit_min: int = Field(settings.DEFAULT_TIME_MIN, ge=settings.MIN_TIME_MIN, le=settings.MAX_TIME_MIN)
     start_now: bool = Field(True, description="False 면 대기실에서 모두 준비 완료 후 시작")
+    difficulty: Literal["easy", "normal", "hard"] = "normal"
 
 
 class ClueState(BaseModel):
@@ -139,6 +140,8 @@ class SessionState(BaseModel):
     ended_at: Optional[str] = None
     hints_used: int
     ai_note: Optional[str] = None   # AI 방 생성을 건너뛴 이유 (한도 초과 등) → 화면 안내
+    difficulty: str = "normal"      # easy | normal | hard
+    hint_penalty_sec: int = 0       # 이 게임의 힌트 1회 감점(초)
     rooms: list[SessionRoomPublic]
     inventory: list[InventoryItem]
 

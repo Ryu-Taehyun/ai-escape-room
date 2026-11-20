@@ -840,3 +840,10 @@ button.big { font-size: 1.2em; padding: 10px 32px; }
 .pm-toggle span { flex: 1; min-width: 0; }
 .pause-foot button:first-child { margin-right: auto; }
 .pz-penalty { opacity: 0.75; font-size: 0.8em; }
+
+/* 난이도 표시 */
+.diff-badge { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 0.72em; font-weight: 700; letter-spacing: 0.02em; vertical-align: middle; border: 1px solid currentColor; }
+.diff-badge.easy { color: #6fdc8c; }
+.diff-badge.normal { color: #ffd166; }
+.diff-badge.hard { color: #ff6b6b; }
+.result .diff-badge { margin: 0 0 10px; font-size: 0.85em; }

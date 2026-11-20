@@ -63,7 +63,7 @@ export default function PauseMenu({ settings, copy, onChange, onReset, onResume,
           <small>{copy.timerLabel} 타이머는 계속 흐릅니다</small>
         </div>
         <button className="primary pause-resume" autoFocus onClick={onResume}>
-          ▶ 계속하기
+          ▶ 계속하기 <small className="muted">· 이동 키·Space·Enter</small>
         </button>
 
         <div className="tabs">

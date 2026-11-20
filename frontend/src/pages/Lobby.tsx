@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { api } from '../api/client';
-import type { GameConfig, RoomBrief, ThemeSummary } from '../types';
+import { DIFFICULTY_LABEL } from '../types';
+import type { Difficulty, GameConfig, RoomBrief, ThemeSummary } from '../types';
 import type { JoinInfo } from '../App';
 import { glyphBandDataURL, noiseDataURL } from '../game/textures';
 
@@ -74,6 +75,22 @@ function saveName(v: string) {
   }
 }
 
+const DIFFICULTY_KEY = 'escape.difficulty';
+const DIFFICULTY_DESC: Record<Difficulty, string> = {
+  easy: '단서가 친절하고 힌트가 많아요 · 힌트 감점 절반',
+  normal: '단서를 조합해 규칙을 한 번 적용',
+  hard: '함정 단서와 여러 단계 추론 · 힌트 감점 1.5배',
+};
+function loadDifficulty(): Difficulty {
+  try {
+    const v = localStorage.getItem(DIFFICULTY_KEY);
+    if (v === 'easy' || v === 'normal' || v === 'hard') return v;
+  } catch {
+    /* 저장 불가 환경 */
+  }
+  return 'normal';
+}
+
 /** 세션에 실제로 배치될 방 (백엔드 select_rooms 와 동일 규칙: 입구·최종 고정, 중간은 순서대로) */
 function pickRooms<T>(rooms: T[], count: number): T[] {
   if (rooms.length < 2) return rooms;
@@ -95,6 +112,7 @@ export default function Lobby({ onJoin }: Props) {
   const [themeKey, setThemeKey] = useState('');
   const [roomCount, setRoomCount] = useState(4);
   const [timeMin, setTimeMin] = useState(60);
+  const [difficulty, setDifficulty] = useState<Difficulty>(loadDifficulty);
   const [joinCode, setJoinCode] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -145,6 +163,15 @@ export default function Lobby({ onJoin }: Props) {
     '--glyphs': `url(${GLYPH_BAND})`,
   } as CSSProperties;
 
+  function chooseDifficulty(d: Difficulty) {
+    setDifficulty(d);
+    try {
+      localStorage.setItem(DIFFICULTY_KEY, d);
+    } catch {
+      /* 저장 불가 환경 */
+    }
+  }
+
   function updateName(v: string) {
     setName(v);
     saveName(v);
@@ -156,7 +183,7 @@ export default function Lobby({ onJoin }: Props) {
     setBusy(true);
     setError('');
     try {
-      const s = await api.createSession(themeKey, roomCount, timeMin);
+      const s = await api.createSession(themeKey, roomCount, timeMin, difficulty);
       onJoin({ sessionId: s.id, playerName: playerName() });
     } catch (e) {
       setError((e as Error).message);
@@ -299,6 +326,19 @@ export default function Lobby({ onJoin }: Props) {
             </h2>
             {config && (
               <div className="settings">
+                <div className="setting">
+                  <span className="setting-label">
+                    문제 난이도 <b>{DIFFICULTY_LABEL[difficulty]}</b>{' '}
+                    <small className="muted">· {DIFFICULTY_DESC[difficulty]}</small>
+                  </span>
+                  <div className="segmented">
+                    {(['easy', 'normal', 'hard'] as Difficulty[]).map((d) => (
+                      <button key={d} className={d === difficulty ? 'on' : ''} onClick={() => chooseDifficulty(d)}>
+                        {DIFFICULTY_LABEL[d]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="setting">
                   <span className="setting-label">방 개수</span>
                   <div className="segmented">

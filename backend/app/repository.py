@@ -127,15 +127,15 @@ def update_room(room_id: int, fields: dict) -> None:
 # ---------- Sessions ----------
 def create_session(
     session_id: str, theme_id: int, room_ids: list[int], time_limit_min: int, status: str = "playing",
-    room_overrides: Optional[dict[int, dict]] = None, ai_note: Optional[str] = None,
+    room_overrides: Optional[dict[int, dict]] = None, ai_note: Optional[str] = None, difficulty: str = "normal",
 ) -> None:
     """room_overrides: {slot: AI 가 이 게임용으로 만든 방 내용} → session_rooms.room_json 에 저장"""
     room_overrides = room_overrides or {}
     with get_conn() as c:
         c.execute(
-            """INSERT INTO game_sessions (id, theme_id, room_count, time_limit_min, started_at, status, ai_note)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (session_id, theme_id, len(room_ids), time_limit_min, now_iso(), status, ai_note),
+            """INSERT INTO game_sessions (id, theme_id, room_count, time_limit_min, started_at, status, ai_note, difficulty)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (session_id, theme_id, len(room_ids), time_limit_min, now_iso(), status, ai_note, difficulty),
         )
         for slot, room_id in enumerate(room_ids):
             override = room_overrides.get(slot)

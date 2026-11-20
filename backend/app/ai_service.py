@@ -301,8 +301,19 @@ async def generate_hint(room: dict, level: int) -> tuple[str, str]:
 _SAFE_SPOTS = [[-3.0, 2.4], [3.0, 2.2], [-4.2, -2.6], [2.8, -2.2], [0.0, 2.8]]
 _PUZZLE_KINDS = ["code", "cipher", "math", "riddle", "logic"]
 
+# 난이도별 출제 기준 (프롬프트에 그대로 들어감) + 미니게임 난이도 범위
+DIFFICULTY_GUIDE = {
+    "easy": ("쉬움: 단서 2~3개, 한 단계만 생각하면 풀리게 하세요. 단서를 그대로 조합하면 답이 나오고, "
+             "정답은 짧은 숫자나 쉬운 단어로. 힌트는 3개(마지막 힌트는 답에 매우 가깝게). 미니게임은 넣더라도 쉽게(difficulty 1~2)."),
+    "normal": ("보통: 단서 3개, 두 단계 추론(단서를 조합한 뒤 규칙을 한 번 적용). 힌트 2개. 미니게임 difficulty 2~3."),
+    "hard": ("어려움: 단서 3~4개 중 1개는 그럴듯하지만 계산에 쓰이지 않는 함정 단서로 하고, 세 단계 이상 추론이 필요하게 하세요 "
+             "(예: 숨은 값을 먼저 구한 뒤 규칙 적용 후 추가 조건). 힌트는 방향만 알려 주는 약한 것 1개. 미니게임 difficulty 4~5."),
+}
+_MINIGAME_RANGE = {"easy": (1, 2), "normal": (2, 3), "hard": (4, 5)}
+_HINT_LIMIT = {"easy": 3, "normal": 2, "hard": 1}
 
-def _sanitize_session_room(draft: dict, base: dict, is_final: bool) -> dict:
+
+def _sanitize_session_room(draft: dict, base: dict, is_final: bool, difficulty: str = "normal") -> dict:
     """AI 초안을 실제 게임에 넣을 수 있게 정리. 쓸 수 없으면 ValueError → 그 방은 기본 방 사용."""
     room = RoomDraft(**draft).model_dump()
     if not room["answer"].strip() and not room.get("minigame"):
@@ -323,14 +334,22 @@ def _sanitize_session_room(draft: dict, base: dict, is_final: bool) -> dict:
         room["hints"] = base["hints"][:1] or ["방 안의 단서를 다시 살펴보세요."]
     # 최종 방은 기본 방처럼 미니게임 → 열쇠 → 문 흐름을 유지
     if is_final and not room.get("minigame") and base.get("minigame"):
-        room["minigame"] = base["minigame"]
+        room["minigame"] = dict(base["minigame"])
+    # 난이도에 맞게: 미니게임 난이도 범위, 힌트 수 (AI 가 기준을 어겨도 게임은 난이도대로)
+    if room.get("minigame"):
+        lo, hi = _MINIGAME_RANGE.get(difficulty, (2, 3))
+        room["minigame"]["difficulty"] = max(lo, min(hi, int(room["minigame"].get("difficulty", 2))))
+    room["hints"] = room["hints"][: _HINT_LIMIT.get(difficulty, 2)]
     return room
 
 
-async def _generate_one(provider: AIProvider, theme: dict, base: dict, slot: int, is_final: bool, kind: str) -> dict:
+async def _generate_one(
+    provider: AIProvider, theme: dict, base: dict, slot: int, is_final: bool, kind: str, difficulty: str = "normal"
+) -> dict:
     request = (
         f"이번 게임만을 위한 새로운 방입니다. 기존 '{base['name']}' 과는 다른 소재와 퍼즐을 쓰세요. "
-        f"퍼즐 유형은 '{kind}' 로 하세요. (변화용 번호 {random.randint(1000, 9999)})"
+        f"퍼즐 유형은 '{kind}' 로 하세요. [난이도] {DIFFICULTY_GUIDE.get(difficulty, DIFFICULTY_GUIDE['normal'])} "
+        f"(변화용 번호 {random.randint(1000, 9999)})"
     )
     user = load_prompt("generate_room").format(
         theme_name=theme["name"],
@@ -339,10 +358,12 @@ async def _generate_one(provider: AIProvider, theme: dict, base: dict, slot: int
         prompt=request,
     )
     text = await provider.complete(load_prompt("system"), user, max_tokens=1500)
-    return _sanitize_session_room(_extract_json(text), base, is_final)
+    return _sanitize_session_room(_extract_json(text), base, is_final, difficulty)
 
 
-async def generate_session_rooms(theme: dict, rooms: list[dict], client_key: str = "") -> tuple[dict[int, dict], str | None]:
+async def generate_session_rooms(
+    theme: dict, rooms: list[dict], client_key: str = "", difficulty: str = "normal"
+) -> tuple[dict[int, dict], str | None]:
     """게임 시작 시 각 방의 문제를 AI 로 새로 만든다 (동시에 요청).
     ({slot: 방 내용}, 건너뛴 이유) 반환. 실패한 방은 빠지며, 그 방은 테마의 기본 방으로 진행된다.
 
@@ -364,14 +385,16 @@ async def generate_session_rooms(theme: dict, rooms: list[dict], client_key: str
         if not await reserve_calls(len(rooms)):
             return {}, NOTE_DAILY
         _game_limiter.record(client_key)
-        return await _generate_rooms(provider, theme, rooms), None
+        return await _generate_rooms(provider, theme, rooms, difficulty), None
 
 
-async def _generate_rooms(provider: AIProvider, theme: dict, rooms: list[dict]) -> dict[int, dict]:
+async def _generate_rooms(provider: AIProvider, theme: dict, rooms: list[dict], difficulty: str = "normal") -> dict[int, dict]:
     kinds = random.sample(_PUZZLE_KINDS, k=len(_PUZZLE_KINDS))  # 방마다 다른 퍼즐 유형
     last = len(rooms) - 1
     tasks = {
-        asyncio.create_task(_generate_one(provider, theme, base, slot, slot == last, kinds[slot % len(kinds)])): slot
+        asyncio.create_task(
+            _generate_one(provider, theme, base, slot, slot == last, kinds[slot % len(kinds)], difficulty)
+        ): slot
         for slot, base in enumerate(rooms)
     }
     # 전체 대기 시간 상한: 늦은 방만 기본 방으로 두고, 먼저 끝난 방은 그대로 사용

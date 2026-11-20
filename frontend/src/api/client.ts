@@ -1,4 +1,5 @@
 import type {
+  Difficulty,
   ActionResponse, InspectResponse, MinigameChallenge,
   AnswerResponse, EditLog, GameConfig, HintResponse, RoomDraft, RoomFull,
   SessionState, ThemeFull, ThemeStyle, ThemeSummary,
@@ -29,8 +30,8 @@ const put = (body: unknown): RequestInit => ({ method: 'PUT', body: JSON.stringi
 export const api = {
   config: () => request<GameConfig>('/api/config'),
   themes: () => request<ThemeSummary[]>('/api/themes'),
-  createSession: (theme_key: string, room_count: number, time_limit_min: number, start_now = false) =>
-    request<SessionState>('/api/sessions', post({ theme_key, room_count, time_limit_min, start_now })),
+  createSession: (theme_key: string, room_count: number, time_limit_min: number, difficulty: Difficulty = 'normal', start_now = false) =>
+    request<SessionState>('/api/sessions', post({ theme_key, room_count, time_limit_min, difficulty, start_now })),
   startSession: (sid: string) => request<SessionState>(`/api/sessions/${sid}/start`, post({})),
   getSession: (sid: string) => request<SessionState>(`/api/sessions/${sid}`),
   submitAnswer: (sid: string, slot: number, answer: string, player_name: string) =>

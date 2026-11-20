@@ -55,7 +55,8 @@ CREATE TABLE IF NOT EXISTS game_sessions (
     status         TEXT NOT NULL DEFAULT 'playing',  -- waiting | playing | escaped | failed
     hints_used     INTEGER NOT NULL DEFAULT 0,
     extra_seconds  INTEGER NOT NULL DEFAULT 0,         -- 관리자가 추가/차감한 시간
-    ai_note        TEXT                                -- AI 방 생성을 건너뛴 이유 (한도 초과 등)
+    ai_note        TEXT,                               -- AI 방 생성을 건너뛴 이유 (한도 초과 등)
+    difficulty     TEXT NOT NULL DEFAULT 'normal'      -- easy | normal | hard
 );
 
 CREATE TABLE IF NOT EXISTS session_rooms (
@@ -154,6 +155,8 @@ def _migrate_columns(conn: sqlite3.Connection) -> None:
     gs_cols = _columns(conn, "game_sessions")
     if gs_cols and "ai_note" not in gs_cols:
         conn.execute("ALTER TABLE game_sessions ADD COLUMN ai_note TEXT")
+    if gs_cols and "difficulty" not in gs_cols:
+        conn.execute("ALTER TABLE game_sessions ADD COLUMN difficulty TEXT NOT NULL DEFAULT 'normal'")
     sr_cols = _columns(conn, "session_rooms")
     if sr_cols:
         if "puzzle_solved" not in sr_cols:

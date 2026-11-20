@@ -17,6 +17,7 @@ import ChatPanel from '../components/ChatPanel';
 import PauseMenu from '../components/PauseMenu';
 import WaitingRoom from '../components/WaitingRoom';
 import ResultScreen from '../components/ResultScreen';
+import { DIFFICULTY_LABEL } from '../types';
 import type { SessionRoom, SessionState, Vec3 } from '../types';
 import { formatTime } from '../utils';
 
@@ -32,6 +33,9 @@ interface Props {
 }
 
 /** 마우스 고정을 풀고 여는 창 (한 번에 하나). 단서·문은 창 없이 바로 처리한다. */
+const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab']);
+const RESUME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Enter']);
+
 type Modal = { kind: 'puzzle' | 'minigame'; slot: number } | { kind: 'map' | 'inventory' | 'admin' | 'pause' } | null;
 
 interface Toast {
@@ -427,6 +431,18 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
       const tg = e.target as HTMLElement;
       if (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA' || tg.tagName === 'SELECT') return;
       const cur = modalRef.current;
+      // ESC 로 마우스 고정이 풀린 뒤 클릭 없이 이어서 하기:
+      // 브라우저는 ESC 를 제외한 키 입력을 '사용자 동작'으로 인정하므로, 그 키를 누르는 순간 다시 고정할 수 있다.
+      const playing = stateRef.current?.status === 'playing' && startedRef.current;
+      if (playing && !pointerLockedRef.current && e.code !== 'Escape' && !MODIFIER_KEYS.has(e.key)) {
+        if (!cur) {
+          void engineRef.current?.lock(); // 창 없이 풀려 있음 (ESC 로 창을 닫은 직후 등) → 이 키로 바로 복귀
+        } else if (cur.kind === 'pause' && RESUME_KEYS.has(e.code)) {
+          e.preventDefault();
+          closeAndResume(); // 일시정지 메뉴에서 이동 키·Space·Enter → 계속하기
+          return;
+        }
+      }
       if (e.code === 'KeyM' || e.code === 'KeyI') {
         const k = e.code === 'KeyM' ? 'map' : 'inventory';
         if (cur?.kind === k) closeAndResume();
@@ -466,7 +482,7 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
     if (!state) return;
     setRestarting(true);
     try {
-      const s = await api.createSession(state.theme.key, state.room_count, state.time_limit_min);
+      const s = await api.createSession(state.theme.key, state.room_count, state.time_limit_min, state.difficulty ?? 'normal');
       send({ type: 'restart', session_id: s.id }); // 같은 방 팀원도 새 방으로
       onRestart(s.id);
     } catch (e) {
@@ -513,7 +529,10 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
 
       {/* HUD */}
       <div className="hud top-left">
-        <div className="timer-label">{copy.timerLabel}</div>
+        <div className="timer-label">
+          {copy.timerLabel}
+          {state.difficulty && <span className={`diff-badge ${state.difficulty}`}>{DIFFICULTY_LABEL[state.difficulty]}</span>}
+        </div>
         <div className={`timer ${lowTime ? 'warn' : ''}`}>{formatTime(remaining)}</div>
         <div className="hud-room">
           {currentSlot + 1}. {room?.name} {room?.status === 'cleared' ? '✓' : ''}
@@ -656,7 +675,7 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
           kind={kind}
           copy={copy}
           remaining={remaining}
-          hintPenalty={hintPenalty}
+          hintPenalty={state.hint_penalty_sec ?? hintPenalty}
           onEscape={closeOnly}
           onClose={closeAndResume}
           onSolved={closeAndResume}

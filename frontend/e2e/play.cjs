@@ -118,18 +118,29 @@ const check = (name, ok, extra = '') => {
   await page.waitForTimeout(700);
   check('창에서 ESC → 창 닫힘, 메뉴 안 뜸', !(await page.$('.pz')) && !(await page.$('.panel.pause')));
   check('ESC 후 안내 문구 없음', !(await page.$('.resume-hint')));
-  await page.mouse.click(640, 380);
-  await page.waitForTimeout(600);
-  check('한 번 클릭으로 바로 이어짐', (await locked()) && !(await page.$('.pz')));
+  // 클릭 없이: 이동 키(W)를 누르는 순간 마우스가 다시 고정되고 그대로 이동
+  const before = await page.evaluate(() => window.__escapeEngine.head.position.z);
+  await page.keyboard.down('KeyW');
+  await page.waitForTimeout(700);
+  await page.keyboard.up('KeyW');
+  const after = await page.evaluate(() => window.__escapeEngine.head.position.z);
+  check('ESC 후 클릭 없이 W 키로 바로 이어짐', (await locked()) && !(await page.$('.pz')), `이동 ${Math.abs(after - before).toFixed(2)}m`);
 
-  // ESC → 일시정지 메뉴 → 계속하기
+  // ESC → 일시정지 메뉴 → 이동 키로 계속
   await page.evaluate(() => document.exitPointerLock());
   await page.waitForSelector('.panel.pause', { timeout: 5000 });
   await shot('03-pause');
   check('마우스 고정 해제 시 일시정지 메뉴', true);
+  await page.keyboard.press('KeyD');
+  await page.waitForTimeout(500);
+  check('일시정지 메뉴에서 D 키 → 바로 계속', (await locked()) && !(await page.$('.panel.pause')));
+
+  // 일시정지 메뉴 → 계속하기 버튼
+  await page.evaluate(() => document.exitPointerLock());
+  await page.waitForSelector('.panel.pause', { timeout: 5000 });
   await page.click('.pause-resume');
   await page.waitForTimeout(500);
-  check('계속하기 → 마우스 재고정', (await locked()) && !(await page.$('.panel.pause')));
+  check('계속하기 버튼 → 마우스 재고정', (await locked()) && !(await page.$('.panel.pause')));
 
   // Enter 채팅 (마우스 유지)
   await page.keyboard.press('Enter');
