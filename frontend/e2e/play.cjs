@@ -13,6 +13,19 @@ const fs = require('fs');
 const path = require('path');
 
 const THEME = process.argv[2] || 'horror';
+
+/** 관리자 비밀번호: 환경 변수 → 실행 중인 서버가 쓰는 backend/.env → 기본값 순 */
+function adminPassword() {
+  if (process.env.ADMIN_PASSWORD) return process.env.ADMIN_PASSWORD;
+  try {
+    const env = fs.readFileSync(path.join(__dirname, '..', '..', 'backend', '.env'), 'utf8');
+    const m = env.match(/^ADMIN_PASSWORD=(.*)$/m);
+    if (m) return m[1].trim().replace(/^["']|["']$/g, '');
+  } catch {
+    /* .env 없음 */
+  }
+  return 'admin1234';
+}
 const BASE = process.env.E2E_URL || 'http://localhost:5173';
 const OUT = path.join(__dirname, 'out');
 fs.mkdirSync(OUT, { recursive: true });
@@ -152,7 +165,8 @@ const check = (name, ok, extra = '') => {
   await page.waitForTimeout(400);
 
   // 미니게임 창
-  const tok = (await api('/api/admin/login', { password: process.env.ADMIN_PASSWORD || 'admin1234' })).token;
+  const tok = (await api('/api/admin/login', { password: adminPassword() })).token;
+  check('관리자 로그인', !!tok);
   const st2 = await api(`/api/sessions/${sid}`);
   const mg = st2.rooms.findIndex((r) => r.minigame);
   if (mg >= 0 && tok) {
