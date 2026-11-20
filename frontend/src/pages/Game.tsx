@@ -163,7 +163,8 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
     if (!started || !state || aiNoticeRef.current === state.id) return;
     aiNoticeRef.current = state.id;
     const made = state.rooms.filter((r) => r.ai_generated).length;
-    if (made > 0) showToast(`🎲 이번 게임의 방 ${made}/${state.rooms.length}개는 AI가 새로 만들었어요`, 'info');
+    if (state.ai_note) showToast(`ℹ️ ${state.ai_note}`, 'info');
+    else if (made > 0) showToast(`🎲 이번 게임의 방 ${made}/${state.rooms.length}개는 AI가 새로 만들었어요`, 'info');
   }, [started, state, showToast]);
 
   // ---- 협동 소켓 ----

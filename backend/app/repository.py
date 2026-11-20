@@ -127,15 +127,15 @@ def update_room(room_id: int, fields: dict) -> None:
 # ---------- Sessions ----------
 def create_session(
     session_id: str, theme_id: int, room_ids: list[int], time_limit_min: int, status: str = "playing",
-    room_overrides: Optional[dict[int, dict]] = None,
+    room_overrides: Optional[dict[int, dict]] = None, ai_note: Optional[str] = None,
 ) -> None:
     """room_overrides: {slot: AI 가 이 게임용으로 만든 방 내용} → session_rooms.room_json 에 저장"""
     room_overrides = room_overrides or {}
     with get_conn() as c:
         c.execute(
-            """INSERT INTO game_sessions (id, theme_id, room_count, time_limit_min, started_at, status)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (session_id, theme_id, len(room_ids), time_limit_min, now_iso(), status),
+            """INSERT INTO game_sessions (id, theme_id, room_count, time_limit_min, started_at, status, ai_note)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (session_id, theme_id, len(room_ids), time_limit_min, now_iso(), status, ai_note),
         )
         for slot, room_id in enumerate(room_ids):
             override = room_overrides.get(slot)
@@ -252,6 +252,32 @@ def mark_item_used(item_id: int) -> bool:
     with get_conn() as c:
         cur = c.execute("UPDATE session_items SET used = 1 WHERE id = ? AND used = 0", (item_id,))
         return cur.rowcount > 0
+
+
+# ---------- AI 사용량 (하루 한도) ----------
+def _today() -> str:
+    from datetime import date
+    return date.today().isoformat()
+
+
+def reserve_ai_calls(n: int, daily_limit: int) -> bool:
+    """오늘 AI 호출 n 번을 예약. 한도 안이면 기록하고 True (여러 요청이 동시에 와도 한도를 넘지 않음)"""
+    day = _today()
+    with get_conn() as c:
+        c.execute("INSERT INTO ai_usage (day, calls) VALUES (?, 0) ON CONFLICT(day) DO NOTHING", (day,))
+        if daily_limit <= 0:
+            c.execute("UPDATE ai_usage SET calls = calls + ? WHERE day = ?", (n, day))
+            return True
+        cur = c.execute(
+            "UPDATE ai_usage SET calls = calls + ? WHERE day = ? AND calls + ? <= ?", (n, day, n, daily_limit)
+        )
+        return cur.rowcount > 0
+
+
+def ai_calls_today() -> int:
+    with get_conn() as c:
+        row = c.execute("SELECT calls FROM ai_usage WHERE day = ?", (_today(),)).fetchone()
+        return row["calls"] if row else 0
 
 
 def increment_hints(session_id: str) -> None:

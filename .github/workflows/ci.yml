@@ -1,0 +1,201 @@
+# 실제 Windows / macOS / Linux 컴퓨터에서 테스트와 실행 스크립트를 검증한다.
+#  - backend   : 백엔드 테스트 (Python 3.10 ~ 3.14, 세 운영체제)
+#  - frontend  : 타입 검사 + 빌드
+#  - e2e       : start.sh 로 서버 실행 → 브라우저 자동 테스트(공포·이집트) → stop.sh
+#  - launch    : start.bat (Windows) / start.sh (macOS) 실행 → 응답 확인 → 종료 확인
+#  - ai-live   : 저장소 Secrets 에 GEMINI_API_KEY 가 있을 때만 실제 AI 연결 확인 (없으면 건너뜀)
+# 실패하면 서버 로그 마지막 부분을 오류 주석(annotation)으로 남긴다.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: backend tests (${{ matrix.os }}, py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, python: "3.10" }
+          - { os: ubuntu-latest, python: "3.14" }
+          - { os: windows-latest, python: "3.14" }
+          - { os: macos-latest, python: "3.14" }
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: 패키지 설치 (빌드 없이 wheel 만)
+        run: 'python -m pip install --only-binary=:all: -r requirements.txt -r requirements-dev.txt'
+      - name: pytest
+        run: python -m pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - name: 타입 검사
+        run: npx tsc --noEmit
+      - name: 빌드
+        run: npm run build
+
+  e2e:
+    name: e2e (start.sh + Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: start.sh 로 서버 실행
+        run: ./start.sh
+      - name: Playwright 브라우저 설치
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: 공포 테마
+        working-directory: frontend
+        run: npm run e2e
+      - name: 이집트 테마
+        working-directory: frontend
+        run: npm run e2e -- egypt
+      - name: stop.sh 로 종료 → 포트가 닫혔는지 확인
+        run: |
+          ./stop.sh
+          sleep 2
+          if curl -s -m 3 http://127.0.0.1:8000/api/health; then echo "::error::stop.sh 후에도 백엔드가 응답함"; exit 1; fi
+          if curl -s -m 3 -o /dev/null http://localhost:5173; then echo "::error::stop.sh 후에도 프론트엔드가 응답함"; exit 1; fi
+          echo "서버가 모두 종료됨"
+      - name: 실패 시 로그를 주석으로
+        if: failure()
+        shell: bash
+        run: |
+          for f in logs/*.log; do
+            [ -f "$f" ] || continue
+            body="$(tail -n 40 "$f" | sed -e 's/%/%25/g' | sed -e ':a' -e 'N' -e '$!ba' -e 's/\n/%0A/g' | tr -d '\r')"
+            echo "::error title=$f::$body"
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-screenshots-and-logs
+          path: |
+            frontend/e2e/out
+            logs
+          if-no-files-found: ignore
+
+  launch:
+    name: launch scripts (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: start.bat (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: call start.bat
+      - name: start.sh (macOS)
+        if: runner.os != 'Windows'
+        run: ./start.sh
+
+      - name: 서버 응답 확인 + 설치 결과 확인
+        shell: bash
+        run: |
+          curl -fsS http://127.0.0.1:8000/api/health && echo
+          curl -fsS -o /dev/null http://localhost:5173 && echo "frontend OK"
+          test -f backend/.env && echo ".env 자동 생성 OK"
+          ls logs
+
+      - name: 두 번째 실행 → 이미 켜진 서버는 건너뛰는지 (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: call start.bat
+      - name: 두 번째 실행 → 이미 켜진 서버는 건너뛰는지 (macOS)
+        if: runner.os != 'Windows'
+        run: ./start.sh
+
+      - name: stop.bat (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: call stop.bat
+      - name: stop.sh (macOS)
+        if: runner.os != 'Windows'
+        run: ./stop.sh
+
+      - name: 종료 확인
+        shell: bash
+        run: |
+          sleep 3
+          if curl -s -m 3 http://127.0.0.1:8000/api/health; then echo "::error::종료 후에도 백엔드가 응답함"; exit 1; fi
+          if curl -s -m 3 -o /dev/null http://localhost:5173; then echo "::error::종료 후에도 프론트엔드가 응답함"; exit 1; fi
+          echo "서버가 모두 종료됨"
+
+      - name: 실패 시 로그를 주석으로
+        if: failure()
+        shell: bash
+        run: |
+          for f in logs/*.log; do
+            [ -f "$f" ] || continue
+            body="$(tail -n 40 "$f" | sed -e 's/%/%25/g' | sed -e ':a' -e 'N' -e '$!ba' -e 's/\n/%0A/g' | tr -d '\r')"
+            echo "::error title=${{ runner.os }} $f::$body"
+          done
+
+  ai-live:
+    name: real AI smoke test (GEMINI_API_KEY 가 있을 때만)
+    runs-on: ubuntu-latest
+    env:
+      AI_PROVIDER: gemini
+      AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+        if: env.AI_API_KEY != ''
+      - uses: actions/setup-python@v5
+        if: env.AI_API_KEY != ''
+        with:
+          python-version: "3.13"
+      - name: 패키지 설치
+        if: env.AI_API_KEY != ''
+        run: python -m pip install -r requirements.txt
+      - name: 실제 AI 로 방 2개 + 힌트 생성
+        if: env.AI_API_KEY != ''
+        run: python -m scripts.ai_smoke
+      - name: 키 없음 → 건너뜀
+        if: env.AI_API_KEY == ''
+        working-directory: .
+        run: echo "::notice::저장소 Settings → Secrets → Actions 에 GEMINI_API_KEY 를 등록하면 실제 AI 연결까지 검사합니다."

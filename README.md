@@ -15,17 +15,23 @@ AI가 만든 퍼즐을 3D 1인칭으로 풀고 제한 시간 안에 탈출하는
 
 ## 1. 실행 방법
 
-### Windows: 한 번에 실행
-프로젝트 폴더의 **`start.bat`** 을 더블클릭하면 아래를 자동으로 처리하고 브라우저(http://localhost:5173)까지 엽니다.
+### 한 번에 실행 (Windows · Mac · Linux)
+| | 실행 | 종료 |
+|---|---|---|
+| Windows | **`start.bat`** 더블클릭 | **`stop.bat`** |
+| Mac / Linux | 터미널에서 **`./start.sh`** | **`./stop.sh`** |
+
+아래를 자동으로 처리하고 브라우저(http://localhost:5173)까지 엽니다. (`NO_BROWSER=1` 이거나 CI 환경이면 브라우저는 열지 않음)
 1. Python 3.10+ / Node.js 설치 확인
 2. `backend/.venv` 가상환경 생성, 패키지 설치 (`requirements.txt` 가 바뀌었을 때만 다시 설치)
 3. `backend/.env` 가 없으면 `.env.example` 로 생성
 4. `frontend` 패키지 설치 (`package-lock.json` 이 바뀌었을 때만 다시 설치)
 5. 백엔드(8000)·프론트엔드(5173)를 **창 없이 백그라운드로** 실행 → 응답하면 브라우저 열기
 
-- 서버 출력은 `logs/backend.log`, `logs/frontend.log` 에 저장됩니다. 서버가 켜지다 죽으면 해당 로그의 마지막 부분을 보여 줍니다.
-- 끌 때는 **`stop.bat`** 을 실행하세요 (창이 없으므로 창 닫기로는 꺼지지 않습니다).
+- 서버 출력은 `logs/backend.log`, `logs/frontend.log` 에 저장됩니다. 서버가 켜지다 죽으면(`--reload` 감시 프로세스만 남은 경우 포함) 기다리지 않고 해당 로그의 마지막 부분을 보여 줍니다.
+- 끌 때는 **`stop.bat` / `./stop.sh`** 를 실행하세요 (창이 없으므로 창 닫기로는 꺼지지 않습니다). 서버의 하위 프로세스(uvicorn 재시작 감시, npm 아래 vite)까지 함께 종료합니다.
 - 이미 켜져 있는 서버는 다시 켜지 않습니다.
+- 세 스크립트 모두 GitHub Actions 에서 **실제 Windows / macOS / Linux** 로 실행·응답·종료까지 검사합니다 (아래 CI).
 
 ### 백엔드
 ```bash
@@ -59,6 +65,9 @@ npm run dev
 | | `AI_API_KEY` | 비워둠. 키를 넣고 `AI_PROVIDER` 를 `claude` / `gemini` 로 변경 |
 | | `AI_MODEL` | 비우면 claude → `claude-sonnet-5-5`, gemini → `gemini-2.5-flash` |
 | | `AI_RANDOM_ROOMS` | 기본 `true`: 키가 있으면 **게임을 시작할 때마다 AI 가 모든 방의 문제를 새로 생성** · `false` 면 테마의 기본 방 |
+| | `AI_DAILY_LIMIT` | 서버 전체 하루 AI 호출 수, 기본 100 (방 생성·힌트·관리자 생성 모두 포함, 0 이하 = 제한 없음) |
+| | `AI_GAMES_PER_IP_HOUR` | 같은 IP 가 1시간에 만들 수 있는 AI 게임 수, 기본 5 |
+| | `AI_MAX_CONCURRENT_GAMES` | 동시에 AI 로 방을 만드는 게임 수, 기본 2 |
 | | `ADMIN_PASSWORD` | 인게임 관리자 비밀번호 — **반드시 변경** (기본값이면 서버 시작 시 경고, 관리자 로그인 시 안내) |
 | | `DATABASE_PATH`, `CORS_ORIGINS` | DB 경로, 허용 프론트 주소 |
 | `frontend/.env` | `VITE_API_URL`, `VITE_WS_URL` | 비우면 프록시 사용. 배포 시에만 입력 |
@@ -148,6 +157,19 @@ cd ../backend && uvicorn app.main:app --host 0.0.0.0 --port 8000
 | ESC | 창이 열려 있으면 창만 닫고(한 번 클릭하면 바로 이어짐), 창이 없을 때만 일시정지 메뉴 |
 | 접근성 | 미니게임에 색 + 기호 표시(색약 대응), 소리 자막, 흔들림 줄이기, 휴대폰 접속 시 PC 전용 안내 |
 | 관리자 | 방 평면도에서 단서를 **드래그해서 배치** |
+
+### 자동 검사 (CI · GitHub Actions)
+푸시할 때마다 `.github/workflows/ci.yml` 이 실제 컴퓨터에서 실행됩니다.
+
+| 작업 | 내용 |
+|---|---|
+| backend | 백엔드 테스트 — Ubuntu(Python 3.10·3.14), Windows, macOS (설치 파일(wheel)만으로 설치되는지 포함) |
+| frontend | 타입 검사 + 빌드 |
+| e2e | `start.sh` 로 서버 실행 → 브라우저 자동 테스트(공포·이집트) → `stop.sh` 후 포트가 닫혔는지 확인 |
+| launch | Windows `start.bat` / macOS `start.sh` 실행 → 응답 확인 → 다시 실행(이미 켜진 서버 건너뛰기) → 종료 확인 |
+| ai-live | 저장소 **Settings → Secrets → Actions** 에 `GEMINI_API_KEY` 를 등록하면 실제 AI 로 방·힌트 생성까지 확인 (없으면 건너뜀) |
+
+실제 AI 연결은 로컬에서도 확인할 수 있습니다: `cd backend && python -m scripts.ai_smoke` (`.env` 의 키 사용, AI 호출 3번)
 
 ### 화면 자동 테스트 (QA)
 ```bash
@@ -301,6 +323,11 @@ ai-escape-room/
   - 형식이 틀렸거나 정답이 없는 초안, 시간(`AI_TIMEOUT_SEC`) 안에 오지 않은 방은 버리고 **테마의 기본 방**으로 진행합니다.
   - 생성된 방은 그 게임(`session_rooms.room_json`)에만 저장되어, 관리자가 편집하는 테마의 기본 방은 바뀌지 않습니다.
   - 무료 키는 하루 요청 수가 적으므로 (방 4개 게임 = 요청 4번) 한도가 걱정되면 `AI_RANDOM_ROOMS=false`. 호출이 실패하면 자동으로 mock 으로 대체되어 게임은 멈추지 않습니다.
+- **비용 보호**: 게임 생성은 누구나 호출할 수 있으므로, AI 호출이 무한정 늘지 않게 세 겹으로 막습니다. 넘으면 오류 대신 **기본 방 / 기본 힌트**로 진행하고, 게임 화면에 이유를 안내합니다.
+  1. 하루 전체 한도 `AI_DAILY_LIMIT` — DB(`ai_usage`)에 기록해 서버를 다시 켜도 유지, 동시에 요청이 와도 한도를 넘지 않게 예약(조건부 갱신)
+  2. 같은 IP 의 AI 게임 수 `AI_GAMES_PER_IP_HOUR` (프록시 뒤라면 `TRUST_PROXY=true`)
+  3. 동시 생성 수 `AI_MAX_CONCURRENT_GAMES` — 생성 중인 게임이 가득 차면 새 게임은 기다리지 않고 기본 방
+  - 로비에 "오늘 남은 AI 호출 N회"를 표시하고, 남은 수가 방 수보다 적으면 기본 방으로 진행된다고 미리 알려 줍니다.
 - 다른 LLM 사용 시 `ai_service.py` 의 `AIProvider.complete()` 만 구현하면 됩니다.
 - 프롬프트 수정은 `backend/app/prompts/*.txt` 에서 (코드 수정 불필요).
 

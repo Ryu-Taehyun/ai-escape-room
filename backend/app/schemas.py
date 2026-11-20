@@ -70,6 +70,7 @@ class GameConfig(BaseModel):
     ai_provider: str = settings.AI_PROVIDER
     ai_random_rooms: bool = settings.ai_random_rooms   # 게임마다 AI 가 문제를 새로 만드는가
     ai_wait_sec: int = int(settings.AI_TIMEOUT_SEC)     # 방 생성 최대 대기 시간 (로비 안내용)
+    ai_calls_left: Optional[int] = None                 # 오늘 남은 AI 호출 수 (제한 없음/AI 없음이면 None)
 
 
 class CreateSessionRequest(BaseModel):
@@ -137,6 +138,7 @@ class SessionState(BaseModel):
     started_at: Optional[str] = None
     ended_at: Optional[str] = None
     hints_used: int
+    ai_note: Optional[str] = None   # AI 방 생성을 건너뛴 이유 (한도 초과 등) → 화면 안내
     rooms: list[SessionRoomPublic]
     inventory: list[InventoryItem]
 

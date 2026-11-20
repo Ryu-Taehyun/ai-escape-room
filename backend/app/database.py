@@ -54,7 +54,8 @@ CREATE TABLE IF NOT EXISTS game_sessions (
     ended_at       TEXT,
     status         TEXT NOT NULL DEFAULT 'playing',  -- waiting | playing | escaped | failed
     hints_used     INTEGER NOT NULL DEFAULT 0,
-    extra_seconds  INTEGER NOT NULL DEFAULT 0          -- 관리자가 추가/차감한 시간
+    extra_seconds  INTEGER NOT NULL DEFAULT 0,         -- 관리자가 추가/차감한 시간
+    ai_note        TEXT                                -- AI 방 생성을 건너뛴 이유 (한도 초과 등)
 );
 
 CREATE TABLE IF NOT EXISTS session_rooms (
@@ -82,6 +83,11 @@ CREATE TABLE IF NOT EXISTS session_items (
     used        INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL,
     UNIQUE (session_id, slot, kind, ref_id)
+);
+
+CREATE TABLE IF NOT EXISTS ai_usage (
+    day         TEXT PRIMARY KEY,       -- 서버 현지 날짜 (YYYY-MM-DD)
+    calls       INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS edit_logs (
@@ -145,6 +151,9 @@ def _migrate_columns(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE rooms ADD COLUMN clues_json TEXT NOT NULL DEFAULT '[]'")
         if "minigame_json" not in room_cols:
             conn.execute("ALTER TABLE rooms ADD COLUMN minigame_json TEXT NOT NULL DEFAULT 'null'")
+    gs_cols = _columns(conn, "game_sessions")
+    if gs_cols and "ai_note" not in gs_cols:
+        conn.execute("ALTER TABLE game_sessions ADD COLUMN ai_note TEXT")
     sr_cols = _columns(conn, "session_rooms")
     if sr_cols:
         if "puzzle_solved" not in sr_cols:

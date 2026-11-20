@@ -15,6 +15,11 @@ echo     AI Escape Room - 백엔드 + 프론트엔드 실행
 echo  ==============================================
 echo.
 
+rem CI 환경(GitHub Actions 등) 또는 NO_BROWSER=1 이면 브라우저를 열지 않고, 끝에서 멈추지 않는다
+set "HEADLESS="
+if defined CI set "HEADLESS=1"
+if defined NO_BROWSER set "HEADLESS=1"
+
 rem ---------- 1. 파이썬 / Node 확인 ----------
 set "PY=py -3"
 call :check_py
@@ -110,17 +115,17 @@ call :wait_for %URL% "%FPID%" frontend
 if errorlevel 1 goto :fail
 goto :open
 :no_curl
-timeout /t 8 /nobreak >nul
+call :sleep 8
 
 :open
-start "" "%URL%"
+if not defined HEADLESS start "" "%URL%"
 echo.
 echo  게임 주소: %URL%
 echo  서버는 창 없이 백그라운드에서 돌아가요. 이 창은 닫아도 됩니다.
 echo  서버 로그: logs\backend.log, logs\frontend.log
 echo  서버를 끄려면 stop.bat 을 실행하세요.
 echo.
-timeout /t 10 >nul
+if not defined HEADLESS call :sleep 10
 exit /b 0
 
 
@@ -135,13 +140,16 @@ set /a TRIES=0
 :wait_loop
 curl -s -o nul "%~1" >nul 2>nul
 if not errorlevel 1 exit /b 0
+rem --reload 감시 프로세스는 살아 있어도 로그에 시작 실패가 찍히면 바로 실패로 본다
+findstr /c:"Application startup failed" /c:"Error loading ASGI app" /c:"Traceback (most recent call last)" /c:"is already in use" "%LOGS%\%~3.log" >nul 2>nul
+if not errorlevel 1 goto :wait_dead
 if "%~2"=="" goto :wait_next
 tasklist /fi "PID eq %~2" /nh 2>nul | findstr /c:" %~2 " >nul
 if errorlevel 1 goto :wait_dead
 :wait_next
 set /a TRIES+=1
 if %TRIES% geq 60 goto :wait_timeout
-timeout /t 1 /nobreak >nul
+call :sleep 1
 goto :wait_loop
 :wait_dead
 echo.
@@ -160,5 +168,11 @@ exit /b 1
 :fail
 echo.
 echo  실행에 실패했어요. 위의 메시지를 확인하세요.
-pause
+if not defined HEADLESS pause
 exit /b 1
+
+rem :sleep 초 - timeout 명령은 콘솔 입력이 없는 환경(CI)에서 바로 끝나므로 ping 으로 기다린다
+:sleep
+set /a _N=%~1+1
+ping -n %_N% 127.0.0.1 >nul
+exit /b 0

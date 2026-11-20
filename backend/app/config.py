@@ -31,6 +31,10 @@ class Settings:
     AI_TIMEOUT_SEC: float = float(os.getenv("AI_TIMEOUT_SEC", "30"))
     # API 키가 있으면 게임을 시작할 때마다 AI 가 모든 방의 문제를 새로 만든다 (false 면 테마의 기본 방 사용)
     AI_RANDOM_ROOMS: bool = os.getenv("AI_RANDOM_ROOMS", "true").strip().lower() not in ("0", "false", "no", "off")
+    # ---- AI 비용 보호 (넘으면 오류 대신 기본 방 / 기본 힌트로 진행) ----
+    AI_DAILY_LIMIT: int = int(os.getenv("AI_DAILY_LIMIT", "100"))              # 서버 전체 하루 AI 호출 수 (0 이하 = 제한 없음)
+    AI_GAMES_PER_IP_HOUR: int = int(os.getenv("AI_GAMES_PER_IP_HOUR", "5"))   # 같은 IP 가 1시간에 만들 수 있는 AI 게임 수
+    AI_MAX_CONCURRENT_GAMES: int = int(os.getenv("AI_MAX_CONCURRENT_GAMES", "2"))  # 동시에 AI 로 방을 만드는 게임 수
 
     # nginx 등 리버스 프록시 뒤에서 실행할 때만 true → 관리자 로그인 제한에 X-Forwarded-For 사용
     TRUST_PROXY: bool = os.getenv("TRUST_PROXY", "false").strip().lower() in ("1", "true", "yes", "on")

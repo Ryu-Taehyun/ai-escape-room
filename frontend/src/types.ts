@@ -45,6 +45,8 @@ export interface GameConfig {
   ai_random_rooms: boolean;
   /** 방 생성 최대 대기 시간(초) */
   ai_wait_sec: number;
+  /** 오늘 남은 AI 호출 수 (한도 없음/AI 없음이면 null) */
+  ai_calls_left?: number | null;
 }
 
 export type ClueObject = 'note' | 'board' | 'book' | 'tablet' | 'statue' | 'jar' | 'box';
@@ -109,6 +111,8 @@ export interface SessionState {
   started_at: string | null;
   ended_at: string | null;
   hints_used: number;
+  /** AI 방 생성을 건너뛴 이유 (하루 한도·생성 횟수 제한 등) */
+  ai_note?: string | null;
   rooms: SessionRoom[];
   inventory: InventoryItem[];
 }

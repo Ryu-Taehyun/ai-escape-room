@@ -68,7 +68,7 @@ def plan_session(theme_key: str, room_count: int, time_limit_min: int) -> tuple[
 
 def create_session(
     theme_key: str, room_count: int, time_limit_min: int, start_now: bool = True,
-    room_overrides: Optional[dict[int, dict]] = None,
+    room_overrides: Optional[dict[int, dict]] = None, ai_note: Optional[str] = None,
 ) -> str:
     """start_now=False 면 대기실(waiting) 상태로 만들고, 모두 준비하면 start_session 으로 시작한다.
     room_overrides: {slot: 방 내용} - AI 가 이 게임용으로 새로 만든 방 (없는 칸은 테마의 기본 방)"""
@@ -76,7 +76,7 @@ def create_session(
     sid = _new_session_id()
     repo.create_session(
         sid, theme["id"], [r["id"] for r in rooms], time_limit_min, "playing" if start_now else "waiting",
-        room_overrides,
+        room_overrides, ai_note,
     )
     return sid
 
@@ -202,6 +202,7 @@ def get_state(session_id: str) -> dict:
         "started_at": session["started_at"],
         "ended_at": session["ended_at"],
         "hints_used": session["hints_used"],
+        "ai_note": session.get("ai_note"),
         "rooms": rooms_public,
         "inventory": [
             {"kind": i["kind"], "slot": i["slot"], "ref_id": i["ref_id"], "name": i["name"],

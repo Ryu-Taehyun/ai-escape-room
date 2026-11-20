@@ -7,11 +7,11 @@
 """
 import asyncio
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from .. import ai_service, game_logic, repository as repo
 from ..config import settings
-from ..deps import session_sid
+from ..deps import client_ip, session_sid
 from ..ratelimit import answer_limiter
 from ..schemas import (
     ActionResponse, AnswerRequest, AnswerResponse, CreateSessionRequest, GameConfig, HintRequest,
@@ -25,7 +25,7 @@ router = APIRouter(prefix="/api", tags=["game"])
 
 @router.get("/config", response_model=GameConfig)
 def get_config():
-    return GameConfig()
+    return GameConfig(ai_calls_left=ai_service.calls_left_today() if settings.ai_random_rooms else None)
 
 
 @router.get("/themes", response_model=list[ThemeSummary])
@@ -45,19 +45,23 @@ def list_themes():
     return result
 
 
-def _create_session_sync(body: CreateSessionRequest, overrides: dict[int, dict]) -> dict:
-    sid = game_logic.create_session(body.theme_key, body.room_count, body.time_limit_min, body.start_now, overrides)
+def _create_session_sync(body: CreateSessionRequest, overrides: dict[int, dict], note: str | None) -> dict:
+    sid = game_logic.create_session(
+        body.theme_key, body.room_count, body.time_limit_min, body.start_now, overrides, note
+    )
     if overrides:
         repo.add_log("ai", "session", sid, {"action": "random_rooms", "slots": sorted(overrides)})
     return game_logic.get_state(sid)
 
 
 @router.post("/sessions", response_model=SessionState)
-async def create_session(body: CreateSessionRequest):
+async def create_session(body: CreateSessionRequest, request: Request):
     theme, rooms = await asyncio.to_thread(game_logic.plan_session, body.theme_key, body.room_count, body.time_limit_min)
-    # API 키가 있으면 이번 게임의 방 문제를 AI 가 새로 만든다 (실패한 방은 테마의 기본 방)
-    overrides = await ai_service.generate_session_rooms(theme, rooms) if settings.ai_random_rooms else {}
-    return await asyncio.to_thread(_create_session_sync, body, overrides)
+    # API 키가 있으면 이번 게임의 방 문제를 AI 가 새로 만든다 (실패한 방·한도 초과면 테마의 기본 방)
+    overrides, note = {}, None
+    if settings.ai_random_rooms:
+        overrides, note = await ai_service.generate_session_rooms(theme, rooms, client_ip(request))
+    return await asyncio.to_thread(_create_session_sync, body, overrides, note)
 
 
 @router.get("/sessions/{session_id}", response_model=SessionState)

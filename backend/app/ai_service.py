@@ -15,7 +15,9 @@ from pathlib import Path
 
 import httpx
 
+from . import repository as repo
 from .config import settings
+from .ratelimit import RateLimiter
 from .schemas import RoomDraft
 
 log = logging.getLogger("ai")
@@ -79,6 +81,38 @@ class GeminiProvider(AIProvider):
 
 
 _PROVIDERS: dict[str, type[AIProvider]] = {"claude": ClaudeProvider, "gemini": GeminiProvider}
+
+
+# =====================================================================
+# 비용 보호: 실제 AI 호출은 모두 하루 한도(DB 기록)를 먼저 예약한다
+# =====================================================================
+_game_limiter = RateLimiter(limit=max(settings.AI_GAMES_PER_IP_HOUR, 1), window_sec=3600)
+_game_slots = asyncio.Semaphore(max(settings.AI_MAX_CONCURRENT_GAMES, 1))
+
+NOTE_DAILY = "오늘 AI 사용 한도를 모두 써서 이번 게임은 테마의 기본 방으로 진행합니다."
+NOTE_BUSY = "지금 다른 게임의 방을 AI가 만드는 중이라 이번 게임은 테마의 기본 방으로 진행합니다."
+
+
+def note_ip_limit(wait_sec: int) -> str:
+    return (
+        f"AI 방 생성은 같은 곳에서 1시간에 {settings.AI_GAMES_PER_IP_HOUR}번까지예요. "
+        f"이번 게임은 테마의 기본 방으로 진행합니다. (약 {max(1, wait_sec // 60)}분 뒤 다시 가능)"
+    )
+
+
+async def reserve_calls(n: int) -> bool:
+    """오늘 남은 한도에서 AI 호출 n 번 예약. 부족하면 False → 호출하지 말고 대체 경로 사용"""
+    ok = await asyncio.to_thread(repo.reserve_ai_calls, n, settings.AI_DAILY_LIMIT)
+    if not ok:
+        log.warning("AI 하루 한도(%d) 초과 → 대체 경로 사용", settings.AI_DAILY_LIMIT)
+    return ok
+
+
+def calls_left_today() -> int | None:
+    """오늘 남은 AI 호출 수. AI 를 안 쓰거나 한도가 없으면 None"""
+    if not settings.ai_enabled or settings.AI_DAILY_LIMIT <= 0:
+        return None
+    return max(0, settings.AI_DAILY_LIMIT - repo.ai_calls_today())
 
 
 def get_provider() -> AIProvider | None:
@@ -222,7 +256,7 @@ def mock_hint(room: dict, level: int) -> str:
 async def generate_room(theme: dict, order_idx: int, prompt: str = "") -> tuple[dict, str]:
     """방 초안 생성. (draft, source) 반환. source = 'claude' | 'gemini' | 'mock'"""
     provider = get_provider()
-    if provider:
+    if provider and await reserve_calls(1):
         try:
             user = load_prompt("generate_room").format(
                 theme_name=theme["name"],
@@ -241,7 +275,7 @@ async def generate_room(theme: dict, order_idx: int, prompt: str = "") -> tuple[
 
 async def generate_hint(room: dict, level: int) -> tuple[str, str]:
     provider = get_provider()
-    if provider:
+    if provider and await reserve_calls(1):
         try:
             user = load_prompt("hint").format(
                 room_name=room["name"],
@@ -308,12 +342,32 @@ async def _generate_one(provider: AIProvider, theme: dict, base: dict, slot: int
     return _sanitize_session_room(_extract_json(text), base, is_final)
 
 
-async def generate_session_rooms(theme: dict, rooms: list[dict]) -> dict[int, dict]:
+async def generate_session_rooms(theme: dict, rooms: list[dict], client_key: str = "") -> tuple[dict[int, dict], str | None]:
     """게임 시작 시 각 방의 문제를 AI 로 새로 만든다 (동시에 요청).
-    {slot: 방 내용} 반환. 실패한 방은 빠지며, 그 방은 테마의 기본 방으로 진행된다."""
+    ({slot: 방 내용}, 건너뛴 이유) 반환. 실패한 방은 빠지며, 그 방은 테마의 기본 방으로 진행된다.
+
+    비용 보호 (넘으면 오류 없이 기본 방으로 진행하고 이유를 돌려준다):
+      1) 같은 IP 는 1시간에 AI_GAMES_PER_IP_HOUR 게임까지
+      2) 동시에 AI 로 만드는 게임은 AI_MAX_CONCURRENT_GAMES 개까지
+      3) 방 수만큼 하루 한도(AI_DAILY_LIMIT)를 미리 예약
+    """
     provider = get_provider()
     if not provider or not settings.AI_RANDOM_ROOMS:
-        return {}
+        return {}, None
+    if settings.AI_GAMES_PER_IP_HOUR > 0:
+        wait = _game_limiter.retry_after(client_key)
+        if wait:
+            return {}, note_ip_limit(wait)
+    if _game_slots.locked():
+        return {}, NOTE_BUSY
+    async with _game_slots:
+        if not await reserve_calls(len(rooms)):
+            return {}, NOTE_DAILY
+        _game_limiter.record(client_key)
+        return await _generate_rooms(provider, theme, rooms), None
+
+
+async def _generate_rooms(provider: AIProvider, theme: dict, rooms: list[dict]) -> dict[int, dict]:
     kinds = random.sample(_PUZZLE_KINDS, k=len(_PUZZLE_KINDS))  # 방마다 다른 퍼즐 유형
     last = len(rooms) - 1
     tasks = {
