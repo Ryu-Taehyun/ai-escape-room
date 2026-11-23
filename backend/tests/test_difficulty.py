@@ -118,3 +118,24 @@ def test_ai_rooms_follow_difficulty(monkeypatch):
         assert all("쉬움" in p for p in prompts)
         room = repo.get_session_room(repo.list_session_rooms(easy["id"])[0])
         assert room["minigame"]["difficulty"] <= 2 and len(room["hints"]) == 3
+
+
+@pytest.mark.parametrize("minutes, normal, easy, hard", [
+    (30, 60, 30, 90),      # 30분 → 1분
+    (45, 90, 45, 135),     # 45분 → 1분 30초
+    (60, 120, 60, 180),    # 60분 → 2분
+    (90, 180, 90, 270),    # 90분 → 3분
+    (120, 240, 120, 360),  # 120분 → 4분
+])
+def test_hint_penalty_scales_with_time_limit(minutes, normal, easy, hard):
+    """힌트 1회 감점 = 제한 시간 30분마다 1분 (보통 기준) × 난이도 배율"""
+    assert game_logic.hint_penalty("normal", minutes) == normal
+    assert game_logic.hint_penalty("easy", minutes) == easy
+    assert game_logic.hint_penalty("hard", minutes) == hard
+    with TestClient(app) as c:
+        s = c.post("/api/sessions", json={"theme_key": "study", "room_count": 2, "time_limit_min": minutes}).json()
+        assert s["hint_penalty_sec"] == normal
+        before = s["remaining_seconds"]
+        res = c.post(f"/api/sessions/{s['id']}/rooms/0/hint", json={"level": 0}).json()
+        assert res["penalty_sec"] == normal
+        assert before - c.get(f"/api/sessions/{s['id']}").json()["remaining_seconds"] >= normal - 2

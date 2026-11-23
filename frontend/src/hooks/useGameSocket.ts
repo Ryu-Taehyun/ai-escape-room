@@ -46,7 +46,15 @@ export function useGameSocket({ sessionId, playerName, onStateChanged, onMark, o
         setEverConnected(true);
         cbs.current.onStateChanged(); // 재연결 시 상태 다시 맞춤
       }),
-      sock.on('_close', () => setConnected(false)),
+      sock.on('_close', (m) => {
+        setConnected(false);
+        const why: Record<number, string> = {
+          4409: '방 인원이 가득 찼습니다 (최대 8명).',
+          4403: '허용되지 않은 주소에서 접속했습니다.',
+          4429: '접속 시도가 너무 많습니다. 잠시 후 다시 연결합니다.',
+        };
+        if (why[m.code]) pushMsg('', why[m.code], true);
+      }),
       sock.on('welcome', (m) => {
         setMyId(m.player_id);
         setMyName(m.name ?? '');

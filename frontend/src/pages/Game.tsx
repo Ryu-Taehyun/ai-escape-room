@@ -683,6 +683,7 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
           copy={copy}
           remaining={remaining}
           hintPenalty={state.hint_penalty_sec ?? hintPenalty}
+          timeLimitMin={state.time_limit_min}
           onEscape={closeOnly}
           onClose={closeAndResume}
           onSolved={closeAndResume}

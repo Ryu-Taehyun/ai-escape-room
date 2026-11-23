@@ -4,6 +4,9 @@ import { DIFFICULTY_LABEL } from '../types';
 import type { Difficulty, GameConfig, RoomBrief, ThemeSummary } from '../types';
 import type { JoinInfo } from '../App';
 import { glyphBandDataURL, noiseDataURL } from '../game/textures';
+import { formatPenalty } from '../utils';
+
+const HINT_RATE: Record<Difficulty, number> = { easy: 0.5, normal: 1, hard: 1.5 };
 
 interface Props {
   onJoin: (info: JoinInfo) => void;
@@ -89,9 +92,9 @@ function saveName(v: string) {
 
 const DIFFICULTY_KEY = 'escape.difficulty';
 const DIFFICULTY_DESC: Record<Difficulty, string> = {
-  easy: '단서가 친절하고 힌트가 많아요 · 힌트 감점 절반',
+  easy: '단서가 친절하고 힌트가 많아요 · 힌트 감점 ×0.5',
   normal: '단서를 조합해 규칙을 한 번 적용',
-  hard: '함정 단서와 여러 단계 추론 · 힌트 감점 1.5배',
+  hard: '함정 단서와 여러 단계 추론 · 힌트 감점 ×1.5',
 };
 function loadDifficulty(): Difficulty {
   try {
@@ -163,6 +166,8 @@ export default function Lobby({ onJoin }: Props) {
   const minigameCount = route.filter((r) => r.minigame).length;
   const clueCount = route.reduce((n, r) => n + r.clue_count, 0);
   const minPerRoom = Math.round(timeMin / Math.max(1, route.length));
+  // 힌트 1회 감점 = 제한 시간 30분마다 1분 × 난이도 배율 (서버 game_logic.hint_penalty 와 같은 규칙)
+  const hintPenalty = Math.round(((config?.hint_penalty_sec ?? 60) * HINT_RATE[difficulty] * timeMin) / 30);
 
   // 선택한 테마 색을 CSS 변수로 → 배경·버튼·강조색이 테마를 따라감
   const themeVars = {
@@ -373,6 +378,11 @@ export default function Lobby({ onJoin }: Props) {
                 <div className="setting">
                   <span className="setting-label">
                     제한 시간 <b>{timeMin}분</b> <small className="muted">· 방당 약 {minPerRoom}분</small>
+                    {hintPenalty > 0 && (
+                      <small className="hint-rule" title="힌트 1회 감점 = 제한 시간 30분마다 1분 (쉬움 ×0.5, 어려움 ×1.5)">
+                        💡 힌트 1회 −{formatPenalty(hintPenalty)}
+                      </small>
+                    )}
                   </span>
                   <div className="segmented">
                     {TIME_PRESETS.map((m) => (

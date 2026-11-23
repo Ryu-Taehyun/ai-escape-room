@@ -16,3 +16,12 @@ def _init_db():
     from app.database import init_db
 
     init_db()
+
+
+@pytest.fixture(autouse=True)
+def _reset_limits():
+    """시도 제한은 IP 별로 쌓이므로 (테스트는 모두 같은 IP) 테스트마다 초기화"""
+    from app.ratelimit import reset_all
+
+    reset_all()
+    yield

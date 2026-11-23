@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from .. import ai_service, game_logic, repository as repo
 from ..config import settings
 from ..deps import client_ip, session_sid
-from ..ratelimit import answer_limiter
+from ..ratelimit import answer_limiter, hint_limiter, minigame_limiter, session_create_limiter
 from ..schemas import (
     ActionResponse, AnswerRequest, AnswerResponse, CreateSessionRequest, GameConfig, HintRequest,
     HintResponse, InspectResponse, MinigameFinishRequest, MinigameStartResponse, PlayerAction,
@@ -54,8 +54,16 @@ def _create_session_sync(body: CreateSessionRequest, overrides: dict[int, dict],
     return game_logic.get_state(sid)
 
 
+def _limited(limiter, key: str, message: str) -> None:
+    """한도 안이면 시도로 기록, 넘었으면 429 (기록과 검사를 한 번에 해서 동시 요청으로 넘을 수 없다)"""
+    if not limiter.hit(key):
+        wait = limiter.retry_after(key)
+        raise HTTPException(status_code=429, detail=f"{message} {wait}초 후 다시 시도하세요.", headers={"Retry-After": str(wait)})
+
+
 @router.post("/sessions", response_model=SessionState)
 async def create_session(body: CreateSessionRequest, request: Request):
+    _limited(session_create_limiter, client_ip(request), "게임을 너무 많이 만들었습니다.")
     theme, rooms = await asyncio.to_thread(game_logic.plan_session, body.theme_key, body.room_count, body.time_limit_min)
     # API 키가 있으면 이번 게임의 방 문제를 AI 가 새로 만든다 (실패한 방·한도 초과면 테마의 기본 방)
     overrides, note = {}, None
@@ -92,14 +100,12 @@ def _with_state(sid: str, fn, *args):
 @router.post("/sessions/{session_id}/rooms/{slot}/answer", response_model=AnswerResponse)
 async def submit_answer(slot: int, body: AnswerRequest, sid: str = Depends(session_sid)):
     limit_key = f"{sid}:{slot}"
-    wait = answer_limiter.retry_after(limit_key)
-    if wait:
-        raise HTTPException(status_code=429, detail=f"너무 많이 틀렸습니다. {wait}초 후 다시 시도하세요.")
+    # 판정 전에 시도로 먼저 기록 → 동시에 여러 답을 보내도 한도를 넘을 수 없다 (맞히면 기록을 지운다)
+    _limited(answer_limiter, limit_key, "너무 많이 틀렸습니다.")
     (correct, message, cleared), state = await asyncio.to_thread(
         _with_state, sid, game_logic.submit_answer, slot, body.answer, body.player_name
     )
     if not correct:
-        answer_limiter.record(limit_key)
         return {"correct": False, "message": message, "state": state}
 
     answer_limiter.reset(limit_key)
@@ -124,6 +130,7 @@ async def inspect_clue(slot: int, clue_id: str, body: PlayerAction, sid: str = D
 # ---------- 미니게임 → 열쇠 ----------
 @router.post("/sessions/{session_id}/rooms/{slot}/minigame/start", response_model=MinigameStartResponse)
 def start_minigame(slot: int, sid: str = Depends(session_sid)):
+    _limited(minigame_limiter, f"{sid}:{slot}", "미니게임을 너무 자주 시작했습니다.")
     return game_logic.start_minigame(sid, slot)
 
 
@@ -149,6 +156,7 @@ async def use_key(slot: int, body: PlayerAction, sid: str = Depends(session_sid)
 
 @router.post("/sessions/{session_id}/rooms/{slot}/hint", response_model=HintResponse)
 async def request_hint(slot: int, body: HintRequest, sid: str = Depends(session_sid)):
+    _limited(hint_limiter, f"{sid}:{slot}", "힌트를 너무 자주 요청했습니다.")
     room, penalty = await asyncio.to_thread(game_logic.get_room_for_hint, sid, slot)
     hint, source = await ai_service.generate_hint(room, body.level)
     await manager.broadcast(sid, {"type": "hint_used", "slot": slot, "level": body.level})

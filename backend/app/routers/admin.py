@@ -5,6 +5,8 @@
 GameError 는 main.py 의 예외 처리기가 처리하고, async 핸들러의 DB 작업은 스레드에서 실행한다.
 """
 import asyncio
+import hashlib
+import logging
 import secrets
 import sqlite3
 import time
@@ -18,39 +20,80 @@ from ..schemas import (
     AddTimeRequest, AdminLoginRequest, AdminLoginResponse, EditLog, GenerateRoomRequest,
     RoomDraft, RoomFull, RoomUpdate, ThemeCreate, ThemeFull, ThemeUpdate,
 )
-from ..ratelimit import login_limiter
+from ..ratelimit import login_guard
 from ..ws_manager import manager
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 _tokens: dict[str, float] = {}  # token → 만료 시각
 
 
-def require_admin(x_admin_token: str = Header(default="")) -> None:
-    exp = _tokens.get(x_admin_token)
+MAX_TOKENS = 20                # 동시에 유지하는 관리자 로그인 수 (넘으면 가장 오래된 것부터 만료)
+FAIL_DELAY_SEC = 0.6          # 틀린 비밀번호 응답을 일부러 늦춰 무차별 대입 속도를 낮춘다
+_log = logging.getLogger("uvicorn.error")
+
+
+def require_admin(x_admin_token: str = Header(default="", max_length=128)) -> None:
+    exp = _tokens.get(x_admin_token) if x_admin_token else None
     if exp is None or exp < time.time():
         _tokens.pop(x_admin_token, None)
         raise HTTPException(status_code=401, detail="관리자 인증이 필요합니다. (로그인이 만료되었을 수 있습니다)")
 
 
+def _password_ok(given: str) -> bool:
+    """상수 시간 비교. 해시로 길이를 맞추고 바이트로 비교 (한글 등 비ASCII 비밀번호도 안전)."""
+    a = hashlib.sha256(given.encode("utf-8")).digest()
+    b = hashlib.sha256(settings.ADMIN_PASSWORD.encode("utf-8")).digest()
+    return secrets.compare_digest(a, b)
+
+
+def _too_many(wait: int) -> HTTPException:
+    return HTTPException(
+        status_code=429, detail=f"로그인 시도가 너무 많습니다. {wait}초 후 다시 시도하세요.",
+        headers={"Retry-After": str(wait)},
+    )
+
+
+def _audit(ip: str, payload: dict) -> None:
+    """보안 기록: 관리자 패널의 '편집 로그'에 actor=security 로 남는다"""
+    try:
+        repo.add_log("security", "admin_login", ip, payload)
+    except Exception:  # 기록 실패가 로그인 처리를 막지 않게
+        _log.exception("보안 기록 실패")
+
+
 @router.post("/login", response_model=AdminLoginResponse)
-def login(body: AdminLoginRequest, request: Request):
+async def login(body: AdminLoginRequest, request: Request):
     ip = client_ip(request)  # 프록시 뒤라면 TRUST_PROXY=true 로 실제 접속 IP 사용
-    wait = login_limiter.retry_after(ip)
+    wait = login_guard.begin(ip)  # 시도를 먼저 기록 → 동시 요청으로 한도를 넘을 수 없음
     if wait:
-        raise HTTPException(status_code=429, detail=f"로그인 시도가 너무 많습니다. {wait}초 후 다시 시도하세요.")
-    if not secrets.compare_digest(body.password, settings.ADMIN_PASSWORD):
-        login_limiter.record(ip)
-        raise HTTPException(status_code=401, detail="비밀번호가 틀렸습니다.")
-    login_limiter.reset(ip)
+        raise _too_many(wait)
+    if not _password_ok(body.password):
+        info = login_guard.failure(ip)
+        await asyncio.sleep(FAIL_DELAY_SEC)
+        if info["locked_sec"]:
+            _log.warning("관리자 로그인 잠금: ip=%s %d초 (단계 %d, 경계 모드=%s)", ip, info["locked_sec"], info["strikes"], info["alert"])
+            await asyncio.to_thread(_audit, ip, {"event": "locked", "seconds": info["locked_sec"], "strike": info["strikes"], "alert": info["alert"]})
+            raise HTTPException(
+                status_code=429, headers={"Retry-After": str(info["locked_sec"])},
+                detail=f"비밀번호가 틀렸습니다. 너무 많이 틀려 {info['locked_sec']}초 동안 로그인이 잠깁니다.",
+            )
+        left = login_guard.remaining(ip)
+        raise HTTPException(status_code=401, detail=f"비밀번호가 틀렸습니다. (잠기기 전까지 {left}번 남음)")
+    login_guard.success(ip)
     now = time.time()
     for t, exp in list(_tokens.items()):  # 만료된 토큰 정리
         if exp < now:
             _tokens.pop(t, None)
-    token = secrets.token_urlsafe(24)
+    while len(_tokens) >= MAX_TOKENS:  # 가장 먼저 만료될 토큰부터 정리
+        _tokens.pop(min(_tokens, key=_tokens.get), None)
+    token = secrets.token_urlsafe(32)
     _tokens[token] = now + settings.ADMIN_TOKEN_TTL_SEC
+    await asyncio.to_thread(_audit, ip, {"event": "success"})
     warning = (
         "기본 관리자 비밀번호를 쓰고 있습니다. backend/.env 의 ADMIN_PASSWORD 를 바꾸세요."
-        if settings.admin_password_is_default else None
+        if settings.admin_password_is_default else (
+            "관리자 비밀번호가 짧습니다. 12자 이상을 권장합니다." if settings.admin_password_is_weak else None
+        )
     )
     return {"token": token, "expires_in": settings.ADMIN_TOKEN_TTL_SEC, "warning": warning}
 
@@ -175,4 +218,4 @@ async def reset_session(sid: str = Depends(session_sid)):
 
 @router.get("/logs", response_model=list[EditLog], dependencies=[Depends(require_admin)])
 def logs(limit: int = 50):
-    return repo.list_logs(min(limit, 200))
+    return repo.list_logs(max(1, min(limit, 200)))  # 음수(LIMIT -1 = 전체) 방지

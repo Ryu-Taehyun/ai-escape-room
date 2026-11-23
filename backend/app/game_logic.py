@@ -50,9 +50,16 @@ def has_minigame(room: dict) -> bool:
 
 
 # ---------- 난이도 ----------
-def hint_penalty(difficulty: str) -> int:
-    """힌트 1회당 줄어드는 시간(초): 기본값 × 난이도 배율 (쉬움 0.5 / 보통 1 / 어려움 1.5)"""
-    return int(round(settings.HINT_PENALTY_SEC * settings.HINT_PENALTY_RATE.get(difficulty, 1.0)))
+def hint_penalty(difficulty: str, time_limit_min: int = 30) -> int:
+    """힌트 1회당 줄어드는 시간(초) — 제한 시간에 비례하는 규칙.
+
+    보통 난이도: 제한 시간 30분마다 1분  → 30분 게임 −1분, 60분 −2분, 90분 −3분, 120분 −4분
+                (5분 단위 시간도 같은 비율: 45분 −1분 30초, 75분 −2분 30초)
+    난이도 배율: 쉬움 ×0.5 / 보통 ×1 / 어려움 ×1.5
+    HINT_PENALTY_SEC = '30분당' 감점(초), 기본 60. 0 이면 감점 없음.
+    """
+    per_30 = settings.HINT_PENALTY_SEC * settings.HINT_PENALTY_RATE.get(difficulty, 1.0)
+    return int(round(per_30 * time_limit_min / 30))
 
 
 def shift_minigame(minigame: Optional[dict], difficulty: str) -> Optional[dict]:
@@ -248,7 +255,7 @@ def get_state(session_id: str) -> dict:
         "hints_used": session["hints_used"],
         "ai_note": session.get("ai_note"),
         "difficulty": session.get("difficulty") or "normal",
-        "hint_penalty_sec": hint_penalty(session.get("difficulty") or "normal"),
+        "hint_penalty_sec": hint_penalty(session.get("difficulty") or "normal", session["time_limit_min"]),
         "rooms": rooms_public,
         "inventory": [
             {"kind": i["kind"], "slot": i["slot"], "ref_id": i["ref_id"], "name": i["name"],
@@ -377,8 +384,8 @@ def get_room_for_hint(session_id: str, slot: int) -> tuple[dict, int]:
     session = _require_playing(session_id)
     _, room = _open_slot(session_id, slot)
     repo.increment_hints(session_id)
-    penalty = hint_penalty(session.get("difficulty") or "normal")
-    if penalty > 0:  # 힌트 1회당 제한 시간 감점 (난이도별 배율)
+    penalty = hint_penalty(session.get("difficulty") or "normal", session["time_limit_min"])
+    if penalty > 0:  # 힌트 1회당 제한 시간 감점 (제한 시간 30분마다 1분 × 난이도 배율)
         repo.update_session(session_id, {"extra_seconds": session["extra_seconds"] - penalty})
     return room, penalty
 

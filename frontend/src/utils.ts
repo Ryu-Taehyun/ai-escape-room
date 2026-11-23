@@ -18,3 +18,10 @@ export function safeStorage(key: string, value?: string): string | null {
   }
   return null;
 }
+
+/** 90 → "1분 30초", 120 → "2분", 45 → "45초" */
+export function formatPenalty(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m && s ? `${m}분 ${s}초` : m ? `${m}분` : `${s}초`;
+}
