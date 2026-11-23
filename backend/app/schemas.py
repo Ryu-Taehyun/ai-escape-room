@@ -68,7 +68,7 @@ class GameConfig(BaseModel):
     min_time_min: int = settings.MIN_TIME_MIN
     max_time_min: int = settings.MAX_TIME_MIN
     default_time_min: int = settings.DEFAULT_TIME_MIN
-    hint_penalty_sec: int = settings.HINT_PENALTY_SEC
+    hint_penalty_sec: int = settings.HINT_PENALTY_SEC  # 보통 난이도, 제한 시간 30분 기준 힌트 1회 감점(초) — 실제 감점은 시간에 비례
     ai_provider: str = settings.AI_PROVIDER
     ai_random_rooms: bool = settings.ai_random_rooms   # 게임마다 AI 가 문제를 새로 만드는가
     ai_wait_sec: int = int(settings.AI_TIMEOUT_SEC)     # 방 생성 최대 대기 시간 (로비 안내용)
@@ -204,7 +204,7 @@ class HintResponse(BaseModel):
 
 # ---------- 관리자 ----------
 class AdminLoginRequest(BaseModel):
-    password: str
+    password: str = Field(..., max_length=256)
 
 
 class AdminLoginResponse(BaseModel):

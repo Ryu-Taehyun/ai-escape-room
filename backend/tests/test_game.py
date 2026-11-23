@@ -223,8 +223,9 @@ def test_waiting_room_ready_and_mark():
 
 
 def test_rate_limits_and_admin_token():
-    from app.ratelimit import answer_limiter, login_limiter
+    from app.ratelimit import answer_limiter, login_guard
     from app.routers import admin as admin_router
+    admin_router.FAIL_DELAY_SEC = 0
     with TestClient(app) as c:
         sid = c.post("/api/sessions", json={"theme_key": "egypt", "room_count": 2}).json()["id"]
         codes = [c.post(f"/api/sessions/{sid}/rooms/0/answer", json={"answer": "0000"}).status_code for _ in range(7)]
@@ -232,10 +233,10 @@ def test_rate_limits_and_admin_token():
         answer_limiter.reset(f"{sid}:0")
         assert c.post(f"/api/sessions/{sid}/rooms/0/answer", json={"answer": "1035"}).json()["correct"]
 
-        login_limiter._hits.clear()
+        login_guard.clear()
         codes = [c.post("/api/admin/login", json={"password": "nope"}).status_code for _ in range(6)]
-        assert codes[:5] == [401] * 5 and codes[5] == 429
-        login_limiter._hits.clear()
+        assert codes[:4] == [401] * 4 and codes[4:] == [429, 429]  # 5번째 실패에서 잠김
+        login_guard.clear()
         res = c.post("/api/admin/login", json={"password": "test-pw"}).json()
         assert res["expires_in"] > 0
         h = {"X-Admin-Token": res["token"]}
@@ -249,8 +250,8 @@ def test_hint_penalty_unique_names_and_team_restart():
         sid = c.post("/api/sessions", json={"theme_key": "egypt", "room_count": 2}).json()["id"]
         before = c.get(f"/api/sessions/{sid}").json()["remaining_seconds"]
         hint = c.post(f"/api/sessions/{sid}/rooms/0/hint", json={"level": 0}).json()
-        assert hint["penalty_sec"] == 60
-        assert before - c.get(f"/api/sessions/{sid}").json()["remaining_seconds"] >= 59
+        assert hint["penalty_sec"] == 120  # 기본 60분 게임 → 힌트 1회 2분
+        assert before - c.get(f"/api/sessions/{sid}").json()["remaining_seconds"] >= 119
 
         new_sid = c.post("/api/sessions", json={"theme_key": "egypt", "start_now": False}).json()["id"]
         with c.websocket_connect(f"/ws/{sid}?name=Kim") as a, c.websocket_connect(f"/ws/{sid}?name=Kim") as b:

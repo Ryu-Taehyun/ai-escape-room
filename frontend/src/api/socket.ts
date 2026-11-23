@@ -41,7 +41,9 @@ export class GameSocket {
     ws.onclose = (ev) => {
       window.clearInterval(this.pingTimer);
       this.emit('_close', { code: ev.code });
-      if (this.closed || ev.code === 4404) return;
+      // 다시 연결해도 소용없는 거부: 없는 방(4404), 다른 사이트(4403), 방 인원 초과(4409)
+      if (this.closed || [4404, 4403, 4409].includes(ev.code)) return;
+      if (ev.code === 4429) this.retry = Math.max(this.retry, 4); // 접속이 너무 잦음 → 천천히 재시도
       const delay = Math.min(1000 * 2 ** this.retry++, 10000);
       window.setTimeout(() => !this.closed && this.connect(), delay);
     };

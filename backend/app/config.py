@@ -1,5 +1,6 @@
 """환경 변수 로딩 및 게임 규칙 상수."""
 import os
+import re
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -54,7 +55,8 @@ class Settings:
     DIFFICULTIES: tuple[str, ...] = ("easy", "normal", "hard")
     DIFFICULTY_LABELS = {"easy": "쉬움", "normal": "보통", "hard": "어려움"}
     HINT_PENALTY_RATE = {"easy": 0.5, "normal": 1.0, "hard": 1.5}  # 난이도별 힌트 감점 배율
-    HINT_PENALTY_SEC: int = int(os.getenv("HINT_PENALTY_SEC", "60"))  # 힌트 1회당 줄어드는 시간 (0 = 감점 없음)
+    # 힌트 1회 감점: 제한 시간 '30분당' 몇 초 (기본 60 → 30분 게임 1분, 60분 게임 2분 …). 0 = 감점 없음
+    HINT_PENALTY_SEC: int = int(os.getenv("HINT_PENALTY_SEC", "60"))
     ADMIN_TOKEN_TTL_SEC: int = int(os.getenv("ADMIN_TOKEN_TTL_SEC", str(2 * 60 * 60)))  # 관리자 로그인 유지 시간
     SESSION_KEEP_HOURS: int = int(os.getenv("SESSION_KEEP_HOURS", "24"))  # 이보다 오래된 세션은 서버 시작 시 삭제
 
@@ -72,15 +74,22 @@ class Settings:
         return self.ADMIN_PASSWORD in ("admin1234", "change-me", "")
 
     @property
+    def admin_password_is_weak(self) -> bool:
+        """12자 미만이거나 한 종류의 문자만 쓰면 약한 비밀번호"""
+        pw = self.ADMIN_PASSWORD
+        kinds = sum(bool(re.search(p, pw)) for p in (r"[a-z]", r"[A-Z]", r"[0-9]", r"[^a-zA-Z0-9]"))
+        return len(pw) < 12 or kinds < 2
+
+    @property
     def is_production(self) -> bool:
         return self.APP_ENV.strip().lower() in ("production", "prod")
 
     def check_startup(self) -> None:
         """서버 시작 전 설정 점검. 운영 환경에서 기본 관리자 비밀번호면 시작을 거부한다."""
-        if self.is_production and self.admin_password_is_default:
+        if self.is_production and (self.admin_password_is_default or self.admin_password_is_weak):
             raise RuntimeError(
-                "APP_ENV=production 에서는 기본 관리자 비밀번호로 서버를 시작할 수 없습니다. "
-                "backend/.env 의 ADMIN_PASSWORD 를 바꾸세요."
+                "APP_ENV=production 에서는 기본값이거나 약한 관리자 비밀번호(12자 미만, 문자 종류 1가지)로 "
+                "서버를 시작할 수 없습니다. backend/.env 의 ADMIN_PASSWORD 를 바꾸세요."
             )
 
 

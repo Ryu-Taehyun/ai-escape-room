@@ -37,6 +37,7 @@ class Challenge:
 
 
 _challenges: dict[str, Challenge] = {}
+MAX_CHALLENGES = 5000  # 동시에 보관하는 문제 수 상한
 
 
 def _cleanup() -> None:
@@ -75,6 +76,9 @@ def create_challenge(session_id: str, slot: int, minigame: dict, decor: str) -> 
         raise ValueError(f"unknown minigame type: {kind}")
 
     ch = Challenge(secrets.token_hex(8), session_id, slot, kind, params, expected)
+    if len(_challenges) >= MAX_CHALLENGES:  # 메모리 보호: 가장 오래된 문제부터 버린다
+        for cid in sorted(_challenges, key=lambda c: _challenges[c].created)[: len(_challenges) - MAX_CHALLENGES + 1]:
+            _challenges.pop(cid, None)
     _challenges[ch.id] = ch
     return ch
 
