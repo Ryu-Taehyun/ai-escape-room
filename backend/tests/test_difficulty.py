@@ -14,7 +14,7 @@ from app.seed_variants import VARIANTS
 
 # 문제의 정답 (보통은 seed_data.py, 쉬움/어려움은 seed_variants.py) - 바뀌면 이 표도 함께 확인
 EXPECTED = {
-    "horror": [("3142", "3142", "2413"), ("HELP", "HELP", "RESCUE"), ("8", "64", "320"), ("", "", "724"), ("58", "58", "116")],
+    "horror": [("4444", "31337", "6667"), ("lee", "lee", "park"), ("62", "62", "36"), ("", "", "724"), ("186", "186", "214")],
     "study": [("4324", "4324", "2443"), ("1103", "1103", "0311"), ("서랍속", "서랍속", "서랍속"), ("2347", "2347", "2340"), ("1974", "1974", "1998")],
     "egypt": [("1035", "1035", "2407"), ("사람", "사람", "구멍"), ("6", "12", "13"), ("은", "동", "금"), ("30", "30", "43")],
 }
@@ -139,3 +139,19 @@ def test_hint_penalty_scales_with_time_limit(minutes, normal, easy, hard):
         res = c.post(f"/api/sessions/{s['id']}/rooms/0/hint", json={"level": 0}).json()
         assert res["penalty_sec"] == normal
         assert before - c.get(f"/api/sessions/{s['id']}").json()["remaining_seconds"] >= normal - 2
+
+
+def test_horror_clues_and_steps_grow_with_difficulty():
+    """공포(보안·네트워크): 난이도가 오를수록 방마다 찾아야 할 단서가 늘어난다 (쉬움 < 보통 < 어려움),
+    어려움에는 퍼즐이 반드시 있고(4번 방은 보통에서 미니게임만), 계산형 방의 단서에는 정답이 그대로 적혀 있지 않다."""
+    base = next(t for t in THEMES if t["key"] == "horror")["rooms"]
+    for idx, room in enumerate(base):
+        easy = {**room, **VARIANTS["horror"][idx]["easy"]}
+        hard = {**room, **VARIANTS["horror"][idx]["hard"]}
+        n = [len(easy["clues"]), len(room["clues"]), len(hard["clues"])]
+        assert n[0] < n[1] < n[2], f"공포 방{idx + 1} 단서 수 {n}"
+        assert len(hard["clues"]) >= 4 and hard["answer"]
+        assert len(hard["hints"]) <= len(room["hints"]) <= len(easy["hints"]) or not room["answer"]
+        if idx in (2, 4):  # 계산으로 답을 구하는 방(3·5번)은 단서에 정답이 그대로 있으면 안 된다 (1·2번은 후보 중 고르는 방식)
+            for c in hard["clues"]:
+                assert hard["answer"].lower() not in c["text"].lower(), f"공포 방{idx + 1} 어려움: 단서 {c['id']}에 정답이 그대로 있음"

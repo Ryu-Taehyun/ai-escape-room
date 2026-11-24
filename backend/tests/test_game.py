@@ -34,19 +34,19 @@ def test_full_game_flow_with_clues_and_minigame():
         assert all(cl["text"] == "" for cl in state["rooms"][0]["clues"])  # 조사 전 단서 내용 비공개
 
         # 단서 조사 → 팀 인벤토리
-        res = c.post(f"/api/sessions/{sid}/rooms/0/clues/memo/inspect", json={"player_name": "A"}).json()
-        assert res["new"] and "빨강" in res["clue"]["text"]
-        assert c.post(f"/api/sessions/{sid}/rooms/0/clues/memo/inspect", json={"player_name": "B"}).json()["new"] is False
-        assert any(i["kind"] == "clue" and i["ref_id"] == "memo" for i in res["state"]["inventory"])
+        res = c.post(f"/api/sessions/{sid}/rooms/0/clues/policy/inspect", json={"player_name": "A"}).json()
+        assert res["new"] and "22(SSH)" in res["clue"]["text"]
+        assert c.post(f"/api/sessions/{sid}/rooms/0/clues/policy/inspect", json={"player_name": "B"}).json()["new"] is False
+        assert any(i["kind"] == "clue" and i["ref_id"] == "policy" for i in res["state"]["inventory"])
         assert c.post(f"/api/sessions/{sid}/rooms/1/clues/manual/inspect", json={}).status_code == 400  # 잠긴 방
 
         # 1번 방 퍼즐
         assert c.post(f"/api/sessions/{sid}/rooms/0/answer", json={"answer": "0000"}).json()["correct"] is False
-        res = c.post(f"/api/sessions/{sid}/rooms/0/answer", json={"answer": "3142", "player_name": "A"}).json()
+        res = c.post(f"/api/sessions/{sid}/rooms/0/answer", json={"answer": "31337", "player_name": "A"}).json()
         assert res["correct"] and res["state"]["rooms"][1]["status"] == "unlocked"
 
         # 최종 방: 암호만 풀면 아직 클리어 아님 (열쇠 필요)
-        res = c.post(f"/api/sessions/{sid}/rooms/1/answer", json={"answer": "58"}).json()
+        res = c.post(f"/api/sessions/{sid}/rooms/1/answer", json={"answer": "186"}).json()
         assert res["correct"] and res["state"]["status"] == "playing" and "마스터 키" in res["message"]
         # 열쇠 없이 사용 불가
         assert c.post(f"/api/sessions/{sid}/rooms/1/use-key", json={}).status_code == 400
@@ -94,7 +94,7 @@ def test_minigame_verification():
 
 
 def test_minigame_only_room():
-    """폐쇄된 지하 통로(퍼즐 없음, 미니게임만) — 5개 방 세션의 4번째 방"""
+    """폐쇄된 지하 케이블 통로(보통: 퍼즐 없음, 미니게임만) — 5개 방 세션의 4번째 방"""
     with TestClient(app) as c:
         token = c.post("/api/admin/login", json={"password": "test-pw"}).json()["token"]
         sid = c.post("/api/sessions", json={"theme_key": "horror", "room_count": 5}).json()["id"]
@@ -191,7 +191,7 @@ def test_migrates_old_database(tmp_path):
         database.init_db()
         from app import repository as repo
         room = repo.list_rooms(1)[0]
-        assert room["name"] == "정체불명의 서버실" and len(room["clues"]) == 3
+        assert room["name"] == "침입당한 서버실" and len(room["clues"]) == 3
     finally:
         settings.DATABASE_PATH = prev
 
@@ -202,7 +202,7 @@ def test_waiting_room_ready_and_mark():
         state = c.post("/api/sessions", json={"theme_key": "horror", "room_count": 2, "start_now": False}).json()
         sid = state["id"]
         assert state["status"] == "waiting" and state["remaining_seconds"] == 60 * 60
-        assert c.post(f"/api/sessions/{sid}/rooms/0/answer", json={"answer": "3142"}).status_code == 400
+        assert c.post(f"/api/sessions/{sid}/rooms/0/answer", json={"answer": "31337"}).status_code == 400
         with c.websocket_connect(f"/ws/{sid}?name=A") as a, c.websocket_connect(f"/ws/{sid}?name=B") as b:
             a.send_json({"type": "ready", "ready": True})
             assert c.get(f"/api/sessions/{sid}").json()["status"] == "waiting"  # B 가 아직
