@@ -45,6 +45,11 @@ const check = (name, ok, extra = '') => {
     ...(process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {}),
   });
   const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
+  // 느린 컴퓨터 흉내 (CI 처럼 프레임이 느린 환경에서만 나는 문제 재현용): E2E_CPU_THROTTLE=6 → CPU 6배 느리게
+  if (process.env.E2E_CPU_THROTTLE) {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: Number(process.env.E2E_CPU_THROTTLE) });
+  }
   // 붉은 서재는 후처리(색보정)까지 확인하도록 그래픽 품질 '중간'으로 (헤드리스는 기본이 '낮음')
   if (THEME === 'study' || process.env.E2E_QUALITY) {
     const q = process.env.E2E_QUALITY || 'medium';
@@ -100,9 +105,18 @@ const check = (name, ok, extra = '') => {
   // 잠긴 문 → 알림
   await tp(3.8, 0, -Math.PI / 2, 0);
   await page.waitForTimeout(2500);
-  await page.keyboard.press('KeyE');
-  await page.waitForSelector('.toast', { timeout: 5000 });
-  check('잠긴 문 알림', (await page.textContent('.toast')).includes('필요한 것'));
+  // 느린 컴퓨터에서는 (1) 앞서 떠 있던 다른 알림을 보고 넘어가거나 (2) 알림이 3.4초 뒤 사라져 읽기 전에 없어질 수 있다.
+  // → '필요한 것' 이 적힌 알림이 뜰 때까지 한 번에 기다리고, E 키가 빗나갔으면 다시 누른다.
+  const doorToast = () =>
+    page
+      .waitForFunction(() => document.querySelector('.toast')?.textContent?.includes('필요한 것'), null, { timeout: 5000, polling: 100 })
+      .then(() => true, () => false);
+  let lockedToast = false;
+  for (let i = 0; i < 3 && !lockedToast; i++) {
+    await page.keyboard.press('KeyE');
+    lockedToast = await doorToast();
+  }
+  check('잠긴 문 알림', lockedToast);
 
   // 퍼즐 → 오답 → 정답 → 자동 복귀
   await tp(0, -1.8, 0, -0.25);
@@ -214,9 +228,13 @@ const check = (name, ok, extra = '') => {
       const yaw = wall ? (sgn > 0 ? Math.PI : 0) : 0;
       await tp(10 + cx, vz, yaw, wall ? 0 : -0.55);
       await page.waitForTimeout(2200);
-      await page.keyboard.press('KeyE');
-      await page.waitForTimeout(900);
-      check(`붉은 서재: ${obj} 전용 단서 화면`, !!(await page.$(sel)));
+      // 느린 컴퓨터에서는 순간이동 직후 조준 판정이 한 박자 늦을 수 있다 → 화면이 뜰 때까지 기다리고, 안 뜨면 E 를 다시 누른다
+      let shown = false;
+      for (let i = 0; i < 3 && !shown; i++) {
+        await page.keyboard.press('KeyE');
+        shown = await page.waitForSelector(sel, { timeout: 5000 }).then(() => true, () => false);
+      }
+      check(`붉은 서재: ${obj} 전용 단서 화면`, shown);
       await shot(`07-${obj}`);
     }
     // 귀신 액자: 2.5초 이상 바라보면 튀어나온다
@@ -227,8 +245,11 @@ const check = (name, ok, extra = '') => {
     });
     const fs2 = fr[1] >= 0 ? 1 : -1;
     await tp(fr[0], fr[1] - fs2 * 2.2, fs2 > 0 ? Math.PI : 0, 0.1);
-    await page.waitForTimeout(3600);
-    const ghostDone = await page.evaluate(() => window.__escapeEngine.study.ghosts[0].done);
+    // 게임은 한 프레임에 최대 0.1초씩만 시간을 센다(engine.js) → 프레임이 느린 CI 에서는 '2.5초 바라보기'에
+    // 실제 시간이 훨씬 더 걸린다. 정해진 시간 대신 귀신이 나올 때까지 (최대 25초) 기다린다.
+    const ghostDone = await page
+      .waitForFunction(() => window.__escapeEngine.study.ghosts[0].done, null, { timeout: 25000, polling: 200 })
+      .then(() => true, () => false);
     check('붉은 서재: 액자를 오래 보면 귀신', ghostDone);
     await shot('08-ghost');
     // 3D 전경 (서재)
