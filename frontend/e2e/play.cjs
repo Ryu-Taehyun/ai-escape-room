@@ -15,7 +15,7 @@ const path = require('path');
 
 const THEME = process.argv[2] || 'study';
 const DECOR = { study: 'study', horror: 'server', egypt: 'pillar' }[THEME] || 'study';
-const FIRST_ANSWER = { study: '4324', horror: '3142', egypt: '1035' }[THEME];
+const FIRST_ANSWER = { study: '4324', horror: '31337', egypt: '1035' }[THEME];
 
 /** 관리자 비밀번호: 환경 변수 → 실행 중인 서버가 쓰는 backend/.env → 기본값 순 */
 function adminPassword() {
