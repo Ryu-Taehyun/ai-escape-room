@@ -80,12 +80,15 @@ jobs:
         working-directory: frontend
         run: npm run e2e
       - name: 공포 테마
+        if: ${{ !cancelled() }}  # 앞 테마가 실패해도 이 단계는 실행 (테마별 결과를 따로 확인)
         working-directory: frontend
         run: npm run e2e -- horror
       - name: 파라오 테마
+        if: ${{ !cancelled() }}  # 앞 테마가 실패해도 이 단계는 실행 (테마별 결과를 따로 확인)
         working-directory: frontend
         run: npm run e2e -- egypt
       - name: stop.sh 로 종료 → 포트가 닫혔는지 확인
+        if: ${{ !cancelled() }}  # 앞 테마가 실패해도 이 단계는 실행 (테마별 결과를 따로 확인)
         run: |
           ./stop.sh
           sleep 2
