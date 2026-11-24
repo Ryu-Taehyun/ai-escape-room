@@ -27,7 +27,7 @@ function adminPassword() {
   } catch {
     /* .env 없음 */
   }
-  return 'admin1234';
+  return 'change-me'; // backend/.env.example 의 개발용 값 (코드에는 기본 비밀번호가 없다)
 }
 const BASE = process.env.E2E_URL || 'http://localhost:5173';
 const OUT = path.join(__dirname, 'out');

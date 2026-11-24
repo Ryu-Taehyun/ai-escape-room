@@ -19,7 +19,9 @@ from .routers import admin, game, ws
 async def lifespan(_: FastAPI):
     settings.check_startup()  # 운영 환경 + 기본 비밀번호면 여기서 시작 거부
     init_db()
-    if settings.admin_password_is_default:
+    if not settings.admin_login_enabled:
+        logging.getLogger("uvicorn.error").warning("⚠ ADMIN_PASSWORD 가 비어 있어 관리자 로그인이 꺼져 있습니다. backend/.env 에 입력하세요.")
+    elif settings.admin_password_is_default:
         logging.getLogger("uvicorn.error").warning("⚠ 기본 관리자 비밀번호를 사용 중입니다. backend/.env 의 ADMIN_PASSWORD 를 바꾸세요.")
     elif settings.admin_password_is_weak:
         logging.getLogger("uvicorn.error").warning("⚠ 관리자 비밀번호가 약합니다 (12자 이상, 문자 종류 2가지 이상 권장).")

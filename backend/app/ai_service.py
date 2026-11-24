@@ -403,6 +403,8 @@ async def _generate_rooms(provider: AIProvider, theme: dict, rooms: list[dict], 
     for t in pending:
         t.cancel()
         log.warning("AI session room %d timed out → 기본 방 사용", tasks[t])
+    if pending:  # 취소가 끝날 때까지 기다린다 (결과를 회수하지 않은 작업의 'never retrieved' 경고 방지)
+        await asyncio.gather(*pending, return_exceptions=True)
     out: dict[int, dict] = {}
     for t in done:
         slot = tasks[t]
