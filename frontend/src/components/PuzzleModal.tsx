@@ -55,7 +55,8 @@ export default function PuzzleModal({ sessionId, room, playerName, disabled, kin
 
   async function submit(e?: FormEvent) {
     e?.preventDefault();
-    if (!answer.trim() || status === 'busy' || status === 'granted') return;
+    if (disabled || solved || !answer.trim() || status === 'busy' || status === 'granted') return;
+    if (phone && !/^[0-9]{4}$/.test(answer)) return;
     setStatus('busy');
     try {
       const res = await api.submitAnswer(sessionId, room.slot, answer, playerName);
@@ -64,12 +65,12 @@ export default function PuzzleModal({ sessionId, room, playerName, disabled, kin
         setStatus('granted');
         onSound('success');
         const needKey = room.minigame && !room.minigame.key_used;
-        setMessage(needKey ? copy.solvedNeedKey(room.minigame!.reward) : copy.granted);
+        setMessage(phone ? '휴대폰 잠금 해제' : needKey ? copy.solvedNeedKey(room.minigame!.reward) : copy.granted);
         // 사용자 입력 직후(5초 이내)라 브라우저가 마우스 재고정을 허용한다
-        closeTimer.current = window.setTimeout(onSolved, needKey ? 2200 : 1300);
+        closeTimer.current = window.setTimeout(onSolved, phone ? 550 : needKey ? 2200 : 1300);
       } else {
         setStatus('denied');
-        setMessage(copy.denied);
+        setMessage(phone ? '비밀번호가 틀렸습니다.' : copy.denied);
         setTries((t) => [answer.trim(), ...t].slice(0, 6));
         onSound('fail');
         setShake((n) => n + 1);
@@ -109,12 +110,130 @@ export default function PuzzleModal({ sessionId, room, playerName, disabled, kin
     else hint();
   }
 
+  const hintPanel = (
+    <aside className={`pz-hintbox ${hints.length ? 'used' : ''}`} aria-label="힌트">
+      <div className="hb-head">
+        <span className="hb-title">💡 {copy.hintLabel}</span>
+        <span className="hb-count" title="사용한 힌트 / 전체 힌트">
+          {hints.length}/{hintTotal}
+        </span>
+      </div>
+      <div className="hb-rule">
+        {hintPenalty > 0 ? (
+          <>
+            1회 사용 시 제한 시간 <b>−{penaltyText}</b>
+            <small>
+              {timeLimitMin ? `${timeLimitMin}분 게임 · ` : ''}제한 시간 30분마다 1분
+            </small>
+          </>
+        ) : (
+          <>힌트를 써도 시간이 줄지 않습니다</>
+        )}
+      </div>
+
+      <ol className="hb-list">
+        {hints.map((h, i) => (
+          <li key={i} className="hb-item">
+            <span className="hb-no">{i + 1}</span>
+            <span>{h}</span>
+          </li>
+        ))}
+      </ol>
+      {!hints.length && <div className="hb-empty">막히면 힌트를 열어 보세요. 단서를 모두 모은 뒤에 쓰는 것이 좋습니다.</div>}
+      {hintError && <div className="hb-error">{hintError}</div>}
+
+      {!solved && status !== 'granted' && (
+        hintsLeft > 0 ? (
+          confirmHint ? (
+            <div className="hb-confirm" role="alertdialog">
+              <p>
+                남은 시간이 <b>{penaltyText}</b> 줄어듭니다. 힌트를 볼까요?
+              </p>
+              <div className="hb-actions">
+                <button type="button" className="hb-btn danger" disabled={disabled || hintBusy} onClick={hint} autoFocus>
+                  −{penaltyText} 하고 보기
+                </button>
+                <button type="button" className="hb-btn ghost" onClick={() => setConfirmHint(false)}>
+                  취소
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button type="button" className="hb-btn" disabled={disabled || hintBusy} onClick={askHint}>
+              {copy.hint} 열기 <small>({hintsLeft}개 남음{penaltyText ? ` · −${penaltyText}` : ''})</small>
+            </button>
+          )
+        ) : (
+          <div className="hb-empty">더 이상 힌트가 없습니다.</div>
+        )
+      )}
+    </aside>
+  );
+
+  if (phone) {
+    const unlocked = solved || status === 'granted';
+    const lockedInput = disabled || unlocked || status === 'busy';
+    return (
+      <div className="overlay phone-lock-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+        <section className="rv-phone phone-lock" role="dialog" aria-modal="true" aria-labelledby="phone-lock-title">
+          <div className="rv-phone-screen phone-lock-screen">
+            <header className="phone-lock-header">
+              <span>피해자의 휴대폰</span>
+              <button type="button" onClick={onClose} aria-label="휴대폰 닫기">×</button>
+            </header>
+            <div className="phone-lock-status">
+              <span aria-hidden="true">{unlocked ? '🔓' : '🔒'}</span>
+              <h2 id="phone-lock-title">{unlocked ? '잠금 해제됨' : '비밀번호 입력'}</h2>
+              <p>벽 달력과 일기장의 단서로 네 자리를 맞춰 보세요.</p>
+            </div>
+            <form className="phone-lock-form" onSubmit={submit}>
+              <input
+                ref={inputRef}
+                type="password"
+                inputMode="numeric"
+                autoComplete="off"
+                aria-label="휴대폰 비밀번호"
+                value={answer}
+                disabled={lockedInput}
+                onChange={(e) => setAnswer(e.target.value.replace(/[^0-9]/g, '').slice(0, 4))}
+                onKeyDown={(e) => { if (e.key === 'Escape') onEscape(); }}
+              />
+              <div className="phone-lock-feedback" role="status">{message}</div>
+              <div className="phone-lock-keypad" aria-label="숫자 키패드">
+                {'123456789'.split('').map((digit) => (
+                  <button key={digit} type="button" disabled={lockedInput} onClick={() => setAnswer((code) => (code + digit).slice(0, 4))}>
+                    {digit}
+                  </button>
+                ))}
+                <span />
+                <button type="button" disabled={lockedInput} onClick={() => setAnswer((code) => (code + '0').slice(0, 4))}>0</button>
+                <button type="button" aria-label="한 자리 지우기" disabled={lockedInput} onClick={() => setAnswer((code) => code.slice(0, -1))}>⌫</button>
+              </div>
+              {unlocked ? (
+                <button className="phone-lock-submit" type="button" onClick={onSolved}>단서 열기</button>
+              ) : (
+                <button className="phone-lock-submit" type="submit" disabled={lockedInput || answer.length !== 4}>잠금 해제</button>
+              )}
+            </form>
+            {!unlocked && (
+              <details className="phone-lock-hints">
+                <summary>수첩 및 힌트</summary>
+                {found.map((c) => <p key={c.id}><b>{c.label}</b> {c.text}</p>)}
+                {hintPanel}
+              </details>
+            )}
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className={`overlay pz-overlay pz-${kind}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className={`pz pz-${status} ${shake ? `shake-${shake % 2}` : ''}`}>
         <div className="pz-head">
           <span className="pz-sys">
-            {phone ? "휴대폰 잠금 화면" : `${copy.puzzleSystem} ${String(room.slot + 1).padStart(2, '0')}`}
+            {copy.puzzleSystem} {String(room.slot + 1).padStart(2, '0')}
           </span>
           <span className={`pz-timer ${remaining < 300 ? 'warn' : ''}`} title={copy.timerLabel}>
             ⏳ {formatTime(remaining)}
@@ -128,7 +247,7 @@ export default function PuzzleModal({ sessionId, room, playerName, disabled, kin
           <section className="pz-screen pz-main" aria-label="문제">
             <div className="pz-tab">🔐 문제</div>
             <div className="pz-boot">
-              {(phone ? ["잠긴 휴대폰입니다. 방 안의 기록을 대조해 비밀번호를 입력하세요."] : copy.puzzleBoot(room.name)).map((line, i) => (
+              {copy.puzzleBoot(room.name).map((line, i) => (
                 <p key={i} style={{ animationDelay: `${i * 140}ms` }}>
                   {line}
                 </p>
@@ -166,8 +285,6 @@ export default function PuzzleModal({ sessionId, room, playerName, disabled, kin
                   <span className="pz-prompt">{copy.prompt}</span>
                   <input
                     ref={inputRef}
-                    type={phone ? 'password' : 'text'}
-                    inputMode={phone ? 'numeric' : 'text'}
                     value={answer}
                     placeholder={copy.inputPlaceholder}
                     disabled={disabled || status === 'busy'}
@@ -180,70 +297,14 @@ export default function PuzzleModal({ sessionId, room, playerName, disabled, kin
                     spellCheck={false}
                   />
                   <button type="submit" className="pz-btn primary" disabled={disabled || status === 'busy'}>
-                    {phone ? '잠금 해제' : copy.submit}
+                    {copy.submit}
                   </button>
                 </form>
               )
             )}
           </section>
 
-          <aside className={`pz-hintbox ${hints.length ? 'used' : ''}`} aria-label="힌트">
-            <div className="hb-head">
-              <span className="hb-title">💡 {copy.hintLabel}</span>
-              <span className="hb-count" title="사용한 힌트 / 전체 힌트">
-                {hints.length}/{hintTotal}
-              </span>
-            </div>
-            <div className="hb-rule">
-              {hintPenalty > 0 ? (
-                <>
-                  1회 사용 시 제한 시간 <b>−{penaltyText}</b>
-                  <small>
-                    {timeLimitMin ? `${timeLimitMin}분 게임 · ` : ''}제한 시간 30분마다 1분
-                  </small>
-                </>
-              ) : (
-                <>힌트를 써도 시간이 줄지 않습니다</>
-              )}
-            </div>
-
-            <ol className="hb-list">
-              {hints.map((h, i) => (
-                <li key={i} className="hb-item">
-                  <span className="hb-no">{i + 1}</span>
-                  <span>{h}</span>
-                </li>
-              ))}
-            </ol>
-            {!hints.length && <div className="hb-empty">막히면 힌트를 열어 보세요. 단서를 모두 모은 뒤에 쓰는 것이 좋습니다.</div>}
-            {hintError && <div className="hb-error">{hintError}</div>}
-
-            {!solved && status !== 'granted' && (
-              hintsLeft > 0 ? (
-                confirmHint ? (
-                  <div className="hb-confirm" role="alertdialog">
-                    <p>
-                      남은 시간이 <b>{penaltyText}</b> 줄어듭니다. 힌트를 볼까요?
-                    </p>
-                    <div className="hb-actions">
-                      <button type="button" className="hb-btn danger" disabled={disabled || hintBusy} onClick={hint} autoFocus>
-                        −{penaltyText} 하고 보기
-                      </button>
-                      <button type="button" className="hb-btn ghost" onClick={() => setConfirmHint(false)}>
-                        취소
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <button type="button" className="hb-btn" disabled={disabled || hintBusy} onClick={askHint}>
-                    {copy.hint} 열기 <small>({hintsLeft}개 남음{penaltyText ? ` · −${penaltyText}` : ''})</small>
-                  </button>
-                )
-              ) : (
-                <div className="hb-empty">더 이상 힌트가 없습니다.</div>
-              )
-            )}
-          </aside>
+          {hintPanel}
         </div>
       </div>
     </div>

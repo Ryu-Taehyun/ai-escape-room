@@ -1098,3 +1098,24 @@ button.big { font-size: 1.2em; padding: 10px 32px; }
 .pz-neutral .pz-tab { color: #9ad; }
 .hint-rule { margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: rgba(255, 207, 90, 0.16); border: 1px solid rgba(255, 207, 90, 0.5); color: #ffd98a; font-weight: 700; }
 .pz-study .pz { padding: 22px 26px; }
+
+/* 피해자의 휴대폰 잠금 화면 */
+.phone-lock { width: min(360px, 100%); max-height: 100%; min-height: 0; }
+.phone-lock-screen { max-height: calc(100dvh - 56px); min-height: 0; overflow-y: auto; padding: 18px 20px; }
+.phone-lock-header { display: flex; align-items: center; justify-content: space-between; font-size: .85rem; }
+.phone-lock button { border: 1px solid #a9c4f238; border-radius: 14px; background: #e1ecff12; color: #e8eefc; cursor: pointer; }
+.phone-lock button:hover:not(:disabled) { background: #e1ecff2b; }
+.phone-lock button:disabled { opacity: .5; cursor: default; }
+.phone-lock-header button { width: 36px; height: 36px; font-size: 1.3rem; }
+.phone-lock-status { margin: 12px 0; text-align: center; }
+.phone-lock-status h2 { margin: 4px 0; font-size: 1.3rem; color: inherit; }
+.phone-lock-status p { margin: 4px 0; font-size: .85rem; color: #b9c9e1; word-break: keep-all; }
+.phone-lock-form input { box-sizing: border-box; width: 100%; border: 1px solid #a9c4f275; border-radius: 12px; background: #070e1c; color: #e8eefc; text-align: center; font-size: 1.45rem; letter-spacing: .55em; padding: 9px 0; }
+.phone-lock-feedback { min-height: 1.6rem; padding-top: 3px; color: #ffd5bf; font-size: .83rem; text-align: center; }
+.phone-lock-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.phone-lock-keypad button { min-height: 42px; font-size: 1.2rem; }
+.phone-lock .phone-lock-submit { min-height: 40px; margin-top: 10px; width: 100%; background: #c6dcff; color: #101b31; font-weight: 700; }
+.phone-lock .phone-lock-submit:hover:not(:disabled) { background: #e4eeff; }
+.phone-lock-hints { margin-top: 12px; font-size: .83rem; }
+.phone-lock-hints summary { cursor: pointer; }
+.phone-lock-hints .pz-hintbox { margin-top: 8px; padding: 10px; }
