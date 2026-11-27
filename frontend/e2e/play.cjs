@@ -227,7 +227,10 @@ const check = (name, ok, extra = '') => {
     await page.evaluate(([s, t]) => fetch(`/api/admin/sessions/${s}/rooms/1/unlock`, { method: 'POST', headers: { 'X-Admin-Token': t } }), [sid, tok]);
     await page.waitForTimeout(1500);
     const st3 = await api(`/api/sessions/${sid}`);
-    for (const [obj, sel] of [['calendar', '.rv-calendar'], ['diary', '.rv-diary'], ['phone', '.pz-input input']]) {
+    check('피해자의 서재에 별도 번호 자물쇠 없음', await page.evaluate(
+      () => !window.__escapeEngine.interactables.some(({ userData }) => userData.target?.kind === 'puzzle' && userData.target.slot === 1),
+    ));
+    for (const [obj, sel] of [['calendar', '.rv-calendar'], ['diary', '.rv-diary'], ['phone', '.phone-lock input']]) {
       const c = st3.rooms[1].clues.find((k) => k.object === obj);
       if (!c) continue;
       const wall = obj === 'calendar';
@@ -252,11 +255,14 @@ const check = (name, ok, extra = '') => {
         check('잠긴 휴대폰 단서 조회 차단', blocked.status() === 403);
         await page.fill(sel, '0000');
         await page.keyboard.press('Enter');
-        await page.waitForSelector('.pz-message.bad');
-        check('오답 입력 후 휴대폰 단서 숨김', !(await page.$('.rv-phone')));
-        await page.fill(sel, st3.difficulty === 'hard' ? '0311' : '1103');
-        await page.keyboard.press('Enter');
-        await page.waitForSelector('.rv-phone', { timeout: 10000 });
+        await page.waitForFunction(() => document.querySelector('.phone-lock-feedback')?.textContent.includes('틀렸습니다'));
+        check('오답 입력 후 휴대폰 단서 숨김', !(await page.$('.clue-doc .rv-phone')));
+        await shot('07-phone-locked');
+        for (const digit of st3.difficulty === 'hard' ? '0311' : '1103') {
+          await page.locator('.phone-lock-keypad').getByRole('button', { name: digit, exact: true }).click();
+        }
+        await page.getByRole('button', { name: '잠금 해제', exact: true }).click();
+        await page.waitForSelector('.clue-doc .rv-phone', { timeout: 10000 });
       }
       await shot(`07-${obj}`);
     }

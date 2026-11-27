@@ -330,7 +330,7 @@ def inspect_clue(session_id: str, slot: int, clue_id: str, player_name: str) -> 
     clue = next((c for c in room.get("clues", []) if c["id"] == clue_id), None)
     if not clue:
         raise GameError("존재하지 않는 단서입니다.", 404)
-    if (clue.get("object") == "phone" and has_puzzle(room)
+    if (clue["id"] == "phone" and clue.get("object") == "phone" and has_puzzle(room)
             and not target["puzzle_solved"] and target["status"] != "cleared"
             and repo.get_theme(session["theme_id"])["style"].get("decor") == "study"
             and not repo.get_item(session_id, slot, "clue", clue_id)):
