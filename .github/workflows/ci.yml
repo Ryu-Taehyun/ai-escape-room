@@ -87,6 +87,9 @@ jobs:
         if: ${{ !cancelled() }}  # 앞 테마가 실패해도 이 단계는 실행 (테마별 결과를 따로 확인)
         working-directory: frontend
         run: npm run e2e -- egypt
+      - name: 한밤의 금고 테마
+        working-directory: frontend
+        run: npm run e2e -- vault
       - name: stop.sh 로 종료 → 포트가 닫혔는지 확인
         if: ${{ !cancelled() }}  # 앞 테마가 실패해도 이 단계는 실행 (테마별 결과를 따로 확인)
         run: |

@@ -13,3 +13,9 @@
 .vault-tablet .doc-stamp.new { color:#a9e7c5; }
 @keyframes vault-stamp { from { opacity:0; transform:scale(1.2) rotate(-4deg); } to { opacity:1; transform:scale(1); } }
 @media (prefers-reduced-motion:reduce) { .doc-vault .doc-stamp.new { animation:none; } }
+.theme-vault .hud-room, .theme-vault .hud-progress { border-left:3px solid var(--vault-gold); padding-left:.65rem; }
+.pz-vault .pz { background:#182720; border:1px solid #a98e55; }
+.pz-vault .pz-head { background:#243e32; border-bottom:2px solid #aa915c; }
+.pz-vault .pz-sys, .pz-vault .pz-prompt { color:#ebd290; }
+.pz-vault .pz-screen { background:#111c17; }
+.pz-vault .pz-question { color:#edf0df; }

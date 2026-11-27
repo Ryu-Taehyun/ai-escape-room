@@ -332,6 +332,9 @@ export class GameAudio {
         else if (pick < 0.6) { this._whisper(pan); this._caption(`[${side}누군가 속삭인다]`); }
         else if (pick < 0.8) { this._creak(pan); this._caption('[철제 구조물이 삐걱인다]'); }
         else { this._distantSteps(pan); this._caption(`[${side}어딘가에서 발소리]`); }
+      } else if (this.kind === 'vault') {
+        this._tone({ type: 'triangle', f0: 125, f1: 175, gain: 0.028, attack: 0.15, decay: 0.65, pan, dest: this.amb });
+        this._caption('[천장에서 감시 카메라 모터가 돌아간다]');
       } else if (this.kind === 'study') {
         if (pick < 0.22) { this._thunder(pan, false); this._caption('[멀리서 천둥이 울린다]'); }
         else if (pick < 0.42) { this._creak(pan); this._caption(`[${side}마룻바닥이 삐걱인다]`); }
