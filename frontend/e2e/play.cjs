@@ -95,7 +95,14 @@ const check = (name, ok, extra = '') => {
   // 단서 (창 없이)
   const st = await api(`/api/sessions/${sid}`);
   const clue = st.rooms[0].clues[0];
-  await tp(clue.pos[0], clue.pos[1] + 1.4, 0, -0.5);
+  if (THEME === 'vault') {
+    // The shift board faces the centre of the room at eye level.
+    const [x, z] = clue.pos;
+    const length = Math.hypot(x, z);
+    await tp(x - 1.6 * x / length, z - 1.6 * z / length, Math.atan2(-x, -z), 0);
+  } else {
+    await tp(clue.pos[0], clue.pos[1] + 1.4, 0, -0.5);
+  }
   await page.waitForTimeout(2500);
   await page.keyboard.press('KeyE');
   await page.waitForSelector('.clue-doc', { timeout: 8000 });
