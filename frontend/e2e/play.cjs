@@ -247,8 +247,9 @@ const check = (name, ok, extra = '') => {
       check(`붉은 서재: ${obj} 전용 단서 화면`, shown);
       if (obj === 'phone') {
         const endpoint = `/api/sessions/${sid}/rooms/1/clues/${c.id}/inspect`;
-        const blocked = await page.evaluate(p => fetch(p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(r => r.status), endpoint);
-        check('잠긴 휴대폰 단서 조회 차단', blocked === 403);
+        // API 검증 요청은 게임 페이지의 콘솔 오류 검사와 분리한다.
+        const blocked = await page.request.post(new URL(endpoint, BASE).href, { data: {} });
+        check('잠긴 휴대폰 단서 조회 차단', blocked.status() === 403);
         await page.fill(sel, '0000');
         await page.keyboard.press('Enter');
         await page.waitForSelector('.pz-message.bad');
