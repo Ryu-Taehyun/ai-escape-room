@@ -36,8 +36,10 @@ export const api = {
   getSession: (sid: string) => request<SessionState>(`/api/sessions/${sid}`),
   submitAnswer: (sid: string, slot: number, answer: string, player_name: string) =>
     request<AnswerResponse>(`/api/sessions/${sid}/rooms/${slot}/answer`, post({ answer, player_name })),
-  hint: (sid: string, slot: number, level: number) =>
-    request<HintResponse>(`/api/sessions/${sid}/rooms/${slot}/hint`, post({ level })),
+  unlockPhone: (sid: string, slot: number, answer: string, player_name: string) =>
+    request<AnswerResponse>(`/api/sessions/${sid}/rooms/${slot}/phone/unlock`, post({ answer, player_name })),
+  hint: (sid: string, slot: number, level: number, phone = false) =>
+    request<HintResponse>(`/api/sessions/${sid}/rooms/${slot}/hint`, post({ level, phone })),
   inspectClue: (sid: string, slot: number, clueId: string, player_name: string) =>
     request<InspectResponse>(`/api/sessions/${sid}/rooms/${slot}/clues/${encodeURIComponent(clueId)}/inspect`, post({ player_name })),
   startMinigame: (sid: string, slot: number) =>

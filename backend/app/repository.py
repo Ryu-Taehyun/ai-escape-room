@@ -182,6 +182,23 @@ def set_session_room_flag(session_id: str, slot: int, flag: str) -> bool:
         return cur.rowcount > 0
 
 
+def solve_puzzle_for_key(session_id: str, slot: int, reward: str, description: str, by: str) -> bool:
+    """번호 자물쇠 해제와 열쇠 지급을 한 트랜잭션에서 처리한다."""
+    with get_conn() as c:
+        cur = c.execute(
+            "UPDATE session_rooms SET puzzle_solved = 1 WHERE session_id = ? AND slot = ? AND puzzle_solved = 0",
+            (session_id, slot),
+        )
+        if not cur.rowcount:
+            return False
+        c.execute(
+            """INSERT INTO session_items (session_id, slot, kind, ref_id, name, text, obtained_by, created_at)
+               VALUES (?, ?, 'key', 'key', ?, ?, ?, ?)""",
+            (session_id, slot, reward, description, by, now_iso()),
+        )
+        return True
+
+
 def mark_room_cleared(session_id: str, slot: int, cleared_by: str) -> bool:
     """방을 클리어 처리. 이번 호출이 처리했으면 True (이미 클리어됐으면 False)"""
     with get_conn() as c:

@@ -364,7 +364,7 @@ async def _generate_one(
 
 
 async def generate_session_rooms(
-    theme: dict, rooms: list[dict], client_key: str = "", difficulty: str = "normal"
+    theme: dict, rooms: list[dict], client_key: str = "", difficulty: str = "normal", *, fixed_slots: set[int] | None = None
 ) -> tuple[dict[int, dict], str | None]:
     """게임 시작 시 각 방의 문제를 AI 로 새로 만든다 (동시에 요청).
     ({slot: 방 내용}, 건너뛴 이유) 반환. 실패한 방은 빠지며, 그 방은 테마의 기본 방으로 진행된다.
@@ -384,13 +384,13 @@ async def generate_session_rooms(
     if _game_slots.locked():
         return {}, NOTE_BUSY
     async with _game_slots:
-        if not await reserve_calls(len(rooms)):
+        if not await reserve_calls(len(rooms) - len(fixed_slots or ())):
             return {}, NOTE_DAILY
         _game_limiter.record(client_key)
-        return await _generate_rooms(provider, theme, rooms, difficulty), None
+        return await _generate_rooms(provider, theme, rooms, difficulty, fixed_slots=fixed_slots), None
 
 
-async def _generate_rooms(provider: AIProvider, theme: dict, rooms: list[dict], difficulty: str = "normal") -> dict[int, dict]:
+async def _generate_rooms(provider: AIProvider, theme: dict, rooms: list[dict], difficulty: str = "normal", *, fixed_slots: set[int] | None = None) -> dict[int, dict]:
     kinds = random.sample(_PUZZLE_KINDS, k=len(_PUZZLE_KINDS))  # 방마다 다른 퍼즐 유형
     last = len(rooms) - 1
     tasks = {
@@ -398,7 +398,10 @@ async def _generate_rooms(provider: AIProvider, theme: dict, rooms: list[dict], 
             _generate_one(provider, theme, base, slot, slot == last, kinds[slot % len(kinds)], difficulty)
         ): slot
         for slot, base in enumerate(rooms)
+        if slot not in (fixed_slots or ())
     }
+    if not tasks:
+        return {}
     # 전체 대기 시간 상한: 늦은 방만 기본 방으로 두고, 먼저 끝난 방은 그대로 사용
     done, pending = await asyncio.wait(tasks, timeout=settings.AI_TIMEOUT_SEC)
     for t in pending:

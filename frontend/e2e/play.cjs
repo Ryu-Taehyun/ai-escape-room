@@ -227,8 +227,8 @@ const check = (name, ok, extra = '') => {
     await page.evaluate(([s, t]) => fetch(`/api/admin/sessions/${s}/rooms/1/unlock`, { method: 'POST', headers: { 'X-Admin-Token': t } }), [sid, tok]);
     await page.waitForTimeout(1500);
     const st3 = await api(`/api/sessions/${sid}`);
-    check('피해자의 서재에 별도 번호 자물쇠 없음', await page.evaluate(
-      () => !window.__escapeEngine.interactables.some(({ userData }) => userData.target?.kind === 'puzzle' && userData.target.slot === 1),
+    check('피해자의 휴대폰과 번호 자물쇠가 별개', await page.evaluate(
+      () => window.__escapeEngine.interactables.some(({ userData }) => userData.target?.kind === 'puzzle' && userData.target.slot === 1),
     ));
     for (const [obj, sel] of [['calendar', '.rv-calendar'], ['diary', '.rv-diary'], ['phone', '.phone-lock input']]) {
       const c = st3.rooms[1].clues.find((k) => k.object === obj);
@@ -266,6 +266,30 @@ const check = (name, ok, extra = '') => {
       }
       await shot(`07-${obj}`);
     }
+    const afterPhone = await api(`/api/sessions/${sid}`);
+    check('휴대폰 해제 후 단서만 획득', afterPhone.rooms[1].clues.find(c => c.id === 'phone')?.text.includes('가장 이른 부재중 전화')
+      && !afterPhone.rooms[1].puzzle_solved && !afterPhone.rooms[1].door_key.key_obtained && afterPhone.rooms[2].status === 'locked');
+
+    await tp(10, -1.8, 0, -0.25);
+    await page.waitForTimeout(2200);
+    await page.keyboard.press('KeyE');
+    await page.waitForSelector('.pz-input input', { timeout: 10000 });
+    await page.fill('.pz-input input', '2341');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('.pz-message.good');
+    await page.waitForSelector('.pz-input input', { state: 'hidden' });
+    await page.waitForSelector('.pz', { state: 'hidden' });
+    const afterLock = await api(`/api/sessions/${sid}`);
+    check('번호 자물쇠 해제 후 열쇠 획득', afterLock.rooms[1].puzzle_solved && afterLock.rooms[1].door_key.key_obtained
+      && !afterLock.rooms[1].door_key.key_used && afterLock.rooms[2].status === 'locked');
+
+    await tp(13.8, 0, -Math.PI / 2, 0);
+    await page.waitForTimeout(2200);
+    await page.keyboard.press('KeyE');
+    await page.waitForSelector('.toast-good');
+    const afterDoor = await api(`/api/sessions/${sid}`);
+    check('문에서 열쇠 사용 후 다음 방 개방', afterDoor.rooms[1].door_key.key_used && afterDoor.rooms[2].status !== 'locked');
+
     // 귀신 액자: 2.5초 이상 바라보면 튀어나온다
     const fr = await page.evaluate(() => {
       const g = window.__escapeEngine.study.ghosts[0].group;

@@ -32,7 +32,7 @@ def get_config():
 def list_themes():
     result = []
     for t in repo.list_themes():
-        rooms = repo.list_rooms(t["id"])
+        rooms = [{**r, **(game_logic.difficulty_room(t["key"], r, "normal") or {})} for r in repo.list_rooms(t["id"])]
         result.append({
             **t,
             "room_names": [r["name"] for r in rooms],
@@ -68,7 +68,8 @@ async def create_session(body: CreateSessionRequest, request: Request):
     # API 키가 있으면 이번 게임의 방 문제를 AI 가 새로 만든다 (실패한 방·한도 초과면 테마의 기본 방)
     overrides, note = {}, None
     if settings.ai_random_rooms:
-        overrides, note = await ai_service.generate_session_rooms(theme, rooms, client_ip(request), body.difficulty)
+        fixed_slots = {slot for slot, room in enumerate(rooms) if game_logic.is_study_phone_room(theme["key"], room)}
+        overrides, note = await ai_service.generate_session_rooms(theme, rooms, client_ip(request), body.difficulty, fixed_slots=fixed_slots)
     return await asyncio.to_thread(_create_session_sync, body, overrides, note)
 
 
@@ -117,6 +118,19 @@ async def submit_answer(slot: int, body: AnswerRequest, sid: str = Depends(sessi
     return {"correct": True, "message": message, "state": state}
 
 
+@router.post("/sessions/{session_id}/rooms/{slot}/phone/unlock", response_model=AnswerResponse)
+async def unlock_phone(slot: int, body: AnswerRequest, sid: str = Depends(session_sid)):
+    limit_key = f"{sid}:{slot}:phone"
+    _limited(answer_limiter, limit_key, "비밀번호를 너무 많이 시도했습니다.")
+    (correct, message), state = await asyncio.to_thread(
+        _with_state, sid, game_logic.unlock_phone, slot, body.answer, body.player_name
+    )
+    if correct:
+        answer_limiter.reset(limit_key)
+        await manager.broadcast(sid, {"type": "state_changed", "reason": "clue"})
+    return {"correct": correct, "message": message, "state": state}
+
+
 # ---------- 모험: 단서 조사 ----------
 @router.post("/sessions/{session_id}/rooms/{slot}/clues/{clue_id}/inspect", response_model=InspectResponse)
 async def inspect_clue(slot: int, clue_id: str, body: PlayerAction, sid: str = Depends(session_sid)):
@@ -157,7 +171,7 @@ async def use_key(slot: int, body: PlayerAction, sid: str = Depends(session_sid)
 @router.post("/sessions/{session_id}/rooms/{slot}/hint", response_model=HintResponse)
 async def request_hint(slot: int, body: HintRequest, sid: str = Depends(session_sid)):
     _limited(hint_limiter, f"{sid}:{slot}", "힌트를 너무 자주 요청했습니다.")
-    room, penalty = await asyncio.to_thread(game_logic.get_room_for_hint, sid, slot)
+    room, penalty = await asyncio.to_thread(game_logic.get_room_for_hint, sid, slot, body.phone)
     hint, source = await ai_service.generate_hint(room, body.level)
     await manager.broadcast(sid, {"type": "hint_used", "slot": slot, "level": body.level})
     if penalty > 0:

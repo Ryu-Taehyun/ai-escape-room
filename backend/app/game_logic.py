@@ -49,6 +49,48 @@ def has_minigame(room: dict) -> bool:
     return bool(room.get("minigame"))
 
 
+def is_study_phone_room(theme_key: str, room: dict) -> bool:
+    return (
+        theme_key == "study"
+        and room.get("source") == "seed"
+        and room.get("order_idx") == 1
+        and any(c["id"] == "phone" and c.get("object") == "phone" for c in room.get("clues", []))
+    )
+
+
+def _study_phone_and_lock(room: dict, difficulty: str) -> dict:
+    phone = next(c for c in room["clues"] if c["id"] == "phone")
+    alerts = phone["text"].splitlines()
+    messages = [line for line in alerts[1:] if line.startswith("메시지")]
+    phone_clue = {
+        **phone,
+        "text": "\n".join([
+            alerts[0],
+            "메모 — 탐정님께. 책상 위 번호 자물쇠는 J의 가장 이른 부재중 전화 시각으로 맞췄소.",
+            "부재중 전화 — 23:43 J",
+            "부재중 전화 — 23:41 J",
+            "부재중 전화 — 23:42 J",
+            *messages,
+        ]),
+    }
+    lock_hints = [
+        "휴대폰의 메모와 부재중 전화 기록을 비교하세요.",
+        "목록의 순서 대신 시각을 비교해 J의 가장 이른 전화를 찾으세요.",
+        "23시 41분을 네 자리로 입력하세요.",
+    ]
+    return {
+        "_variant": difficulty,
+        "phone_code": room["answer"],
+        "phone_hints": room["hints"],
+        "question": "책상 위 번호 자물쇠\n휴대폰의 메모가 가리키는 시각을 24시간제 네 자리로 입력하라.",
+        "answer": "2341",
+        "hints": lock_hints[:len(room["hints"])],
+        "clues": [phone_clue if c["id"] == "phone" else c for c in room["clues"]],
+        "minigame": None,
+        "puzzle_reward": room["minigame"]["reward"],
+    }
+
+
 # ---------- 난이도 ----------
 def hint_penalty(difficulty: str, time_limit_min: int = 30) -> int:
     """힌트 1회당 줄어드는 시간(초) — 제한 시간에 비례하는 규칙.
@@ -75,6 +117,9 @@ def difficulty_room(theme_key: str, room: dict, difficulty: str) -> Optional[dic
     - 수정하지 않은 기본 방(seed): seed_variants.py 에 준비된 쉬움/어려움 문제
     - 관리자가 고쳤거나 새로 만든 방: 같은 문제에 힌트 수와 미니게임 난이도만 조정
     """
+    if is_study_phone_room(theme_key, room):
+        variant = VARIANTS[theme_key][room["order_idx"]].get(difficulty, {})
+        return _study_phone_and_lock({**room, **variant}, difficulty)
     if difficulty not in ("easy", "hard"):
         return None
     variants = VARIANTS.get(theme_key, [])
@@ -215,6 +260,11 @@ def get_state(session_id: str) -> dict:
                 "is_final": s["slot"] == len(slots) - 1,
                 "ai_generated": bool(s.get("room_json")) and not room.get("_variant"),
                 "hint_count": len(room["hints"]),
+                "phone_hint_count": len(room["phone_hints"]) if room.get("phone_code") else None,
+                "door_key": (
+                    {"reward": room["puzzle_reward"], "key_obtained": key is not None, "key_used": bool(s["key_used"])}
+                    if room.get("puzzle_reward") else None
+                ),
                 "cleared_by": s["cleared_by"],
                 "cleared_at": s["cleared_at"],
                 "clues": [
@@ -277,7 +327,7 @@ def _try_clear(session_id: str, slot: int, player_name: str) -> Optional[str]:
     room = repo.get_session_room(target)
     if has_puzzle(room) and not target["puzzle_solved"]:
         return None
-    if has_minigame(room) and not target["key_used"]:
+    if (has_minigame(room) or room.get("puzzle_reward")) and not target["key_used"]:
         return None
 
     if not repo.mark_room_cleared(session_id, slot, player_name):
@@ -308,8 +358,16 @@ def submit_answer(session_id: str, slot: int, answer: str, player_name: str) -> 
         raise GameError("이 방에는 풀어야 할 암호가 없습니다.")
     if target["status"] == "cleared" or target["puzzle_solved"]:
         return True, "이미 해제된 암호입니다.", False
+    if room.get("phone_code") and not repo.get_item(session_id, slot, "clue", "phone"):
+        return False, "먼저 피해자의 휴대폰 잠금을 풀고 단서를 확인하세요.", False
     if not check_answer(answer, room["answer"]):
         return False, "틀렸습니다. 방 안의 단서를 더 조사해 보세요.", False
+
+    reward = room.get("puzzle_reward")
+    if reward:
+        if repo.solve_puzzle_for_key(session_id, slot, reward, f"{room['name']}의 문을 여는 열쇠", player_name):
+            return True, f"🔑 '{reward}' 획득! 문으로 가서 사용하세요.", False
+        return True, "이미 해제된 암호입니다.", False
 
     if not repo.set_session_room_flag(session_id, slot, "puzzle_solved"):
         return True, "이미 해제된 암호입니다.", False  # 동시에 들어온 다른 정답이 먼저 처리됨
@@ -323,6 +381,20 @@ def submit_answer(session_id: str, slot: int, answer: str, player_name: str) -> 
 
 
 # ---------- 단서 ----------
+def unlock_phone(session_id: str, slot: int, answer: str, player_name: str) -> tuple[bool, str]:
+    _require_playing(session_id)
+    _, room = _open_slot(session_id, slot)
+    if not room.get("phone_code"):
+        raise GameError("이 방에는 잠긴 휴대폰이 없습니다.", 404)
+    if repo.get_item(session_id, slot, "clue", "phone"):
+        return True, "이미 잠금이 해제됐습니다."
+    if not check_answer(answer, room["phone_code"]):
+        return False, "비밀번호가 틀렸습니다."
+    phone = next(c for c in room["clues"] if c["id"] == "phone")
+    repo.add_item(session_id, slot, "clue", "phone", phone["label"], phone["text"], player_name)
+    return True, "휴대폰 잠금이 해제됐습니다."
+
+
 def inspect_clue(session_id: str, slot: int, clue_id: str, player_name: str) -> tuple[dict, bool]:
     """(단서, 새로 발견했는지)"""
     session = _require_playing(session_id)
@@ -330,11 +402,13 @@ def inspect_clue(session_id: str, slot: int, clue_id: str, player_name: str) -> 
     clue = next((c for c in room.get("clues", []) if c["id"] == clue_id), None)
     if not clue:
         raise GameError("존재하지 않는 단서입니다.", 404)
-    if (clue["id"] == "phone" and clue.get("object") == "phone" and has_puzzle(room)
-            and not target["puzzle_solved"] and target["status"] != "cleared"
+    if clue["id"] == "phone" and clue.get("object") == "phone":
+        legacy_locked = (
+            has_puzzle(room) and not target["puzzle_solved"] and target["status"] != "cleared"
             and repo.get_theme(session["theme_id"])["style"].get("decor") == "study"
-            and not repo.get_item(session_id, slot, "clue", clue_id)):
-        raise GameError("휴대폰이 잠겨 있습니다. 방 안의 단서로 비밀번호를 풀어 주세요.", 403)
+        )
+        if (room.get("phone_code") or legacy_locked) and not repo.get_item(session_id, slot, "clue", clue_id):
+            raise GameError("휴대폰이 잠겨 있습니다. 방 안의 단서로 비밀번호를 풀어 주세요.", 403)
     is_new = repo.add_item(session_id, slot, "clue", clue_id, clue["label"], clue["text"], player_name)
     return clue, is_new
 
@@ -369,13 +443,13 @@ def use_key(session_id: str, slot: int, player_name: str) -> tuple[str, bool]:
     """(메시지, 방 클리어 여부)"""
     _require_playing(session_id)
     target, room = _open_slot(session_id, slot)
-    if not has_minigame(room):
+    if not has_minigame(room) and not room.get("puzzle_reward"):
         raise GameError("이 문은 열쇠가 필요 없습니다. 암호를 풀면 열립니다.")
     if target["key_used"]:
         return "이미 열쇠를 사용했습니다.", False
     key = repo.get_item(session_id, slot, "key", "key")
     if not key:
-        raise GameError("열쇠가 없습니다. 이 방의 미니게임을 먼저 통과하세요.")
+        raise GameError("열쇠가 없습니다. 번호 자물쇠를 먼저 풀어 주세요." if room.get("puzzle_reward") else "열쇠가 없습니다. 이 방의 미니게임을 먼저 통과하세요.")
     if not repo.mark_item_used(key["id"]) or not repo.set_session_room_flag(session_id, slot, "key_used"):
         return "이미 열쇠를 사용했습니다.", False
     cleared = _try_clear(session_id, slot, player_name)
@@ -384,10 +458,22 @@ def use_key(session_id: str, slot: int, player_name: str) -> tuple[str, bool]:
     return f"🔑 '{key['name']}' 사용! 이제 단말기의 암호만 풀면 됩니다.", False
 
 
-def get_room_for_hint(session_id: str, slot: int) -> tuple[dict, int]:
+def get_room_for_hint(session_id: str, slot: int, phone: bool = False) -> tuple[dict, int]:
     """(방, 이번 힌트로 줄어든 시간(초))"""
     session = _require_playing(session_id)
     _, room = _open_slot(session_id, slot)
+    if phone:
+        if not room.get("phone_code"):
+            raise GameError("이 방에는 잠긴 휴대폰이 없습니다.", 404)
+        room = {
+            **room,
+            "question": "휴대폰 비밀번호 네 자리",
+            "answer": room["phone_code"],
+            "hints": room["phone_hints"],
+            "clues": [c for c in room["clues"] if c["id"] != "phone"],
+        }
+    elif room.get("phone_code") and not repo.get_item(session_id, slot, "clue", "phone"):
+        raise GameError("번호 자물쇠 힌트는 휴대폰 단서를 찾은 뒤에 볼 수 있습니다.")
     repo.increment_hints(session_id)
     penalty = hint_penalty(session.get("difficulty") or "normal", session["time_limit_min"])
     if penalty > 0:  # 힌트 1회당 제한 시간 감점 (제한 시간 30분마다 1분 × 난이도 배율)

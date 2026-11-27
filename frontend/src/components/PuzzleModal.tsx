@@ -44,8 +44,11 @@ export default function PuzzleModal({ sessionId, room, playerName, disabled, kin
   const inputRef = useRef<HTMLInputElement>(null);
   const closeTimer = useRef<number>();
 
-  const solved = room.status === 'cleared' || room.puzzle_solved;
+  const separatePhone = phone && room.phone_hint_count != null;
   const found = room.clues.filter((c) => c.found);
+  const solved = separatePhone
+    ? found.some((c) => c.id === 'phone')
+    : room.status === 'cleared' || room.puzzle_solved;
 
   useEffect(() => () => window.clearTimeout(closeTimer.current), []);
   useEffect(() => {
@@ -59,18 +62,19 @@ export default function PuzzleModal({ sessionId, room, playerName, disabled, kin
     if (phone && !/^[0-9]{4}$/.test(answer)) return;
     setStatus('busy');
     try {
-      const res = await api.submitAnswer(sessionId, room.slot, answer, playerName);
+      const sendAnswer = separatePhone ? api.unlockPhone : api.submitAnswer;
+      const res = await sendAnswer(sessionId, room.slot, answer, playerName);
       onState(res.state);
       if (res.correct) {
         setStatus('granted');
-        onSound('success');
+        onSound(!phone && room.door_key ? 'key' : 'success');
         const needKey = room.minigame && !room.minigame.key_used;
-        setMessage(phone ? '휴대폰 잠금 해제' : needKey ? copy.solvedNeedKey(room.minigame!.reward) : copy.granted);
+        setMessage(phone ? '휴대폰 잠금 해제' : room.door_key ? res.message : needKey ? copy.solvedNeedKey(room.minigame!.reward) : copy.granted);
         // 사용자 입력 직후(5초 이내)라 브라우저가 마우스 재고정을 허용한다
         closeTimer.current = window.setTimeout(onSolved, phone ? 550 : needKey ? 2200 : 1300);
       } else {
         setStatus('denied');
-        setMessage(phone ? '비밀번호가 틀렸습니다.' : copy.denied);
+        setMessage(phone ? '비밀번호가 틀렸습니다.' : room.door_key ? res.message : copy.denied);
         setTries((t) => [answer.trim(), ...t].slice(0, 6));
         onSound('fail');
         setShake((n) => n + 1);
@@ -83,7 +87,7 @@ export default function PuzzleModal({ sessionId, room, playerName, disabled, kin
     }
   }
 
-  const hintTotal = room.hint_count ?? 0;
+  const hintTotal = (separatePhone ? room.phone_hint_count : room.hint_count) ?? 0;
   const hintsLeft = Math.max(0, hintTotal - hints.length);
   const penaltyText = hintPenalty > 0 ? formatPenalty(hintPenalty) : '';
 
@@ -92,7 +96,7 @@ export default function PuzzleModal({ sessionId, room, playerName, disabled, kin
     setHintBusy(true);
     setHintError('');
     try {
-      const res = await api.hint(sessionId, room.slot, hints.length);
+      const res = await api.hint(sessionId, room.slot, hints.length, separatePhone);
       setHints((h) => [...h, res.hint]);
       onSound('type');
     } catch (err) {
@@ -184,7 +188,7 @@ export default function PuzzleModal({ sessionId, room, playerName, disabled, kin
             <div className="phone-lock-status">
               <span aria-hidden="true">{unlocked ? '🔓' : '🔒'}</span>
               <h2 id="phone-lock-title">{unlocked ? '잠금 해제됨' : '비밀번호 입력'}</h2>
-              <p>벽 달력과 일기장의 단서로 네 자리를 맞춰 보세요.</p>
+              <p>{room.clues.some((c) => c.object === 'diary') ? '벽 달력과 일기장의 단서로 네 자리를 맞춰 보세요.' : '벽 달력에서 하은이의 생일을 찾아 월일 네 자리를 입력하세요.'}</p>
             </div>
             <form className="phone-lock-form" onSubmit={submit}>
               <input

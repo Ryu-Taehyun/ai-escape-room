@@ -86,6 +86,12 @@ export interface InventoryItem {
   used: boolean;
 }
 
+export interface DoorKeyState {
+  reward: string;
+  key_obtained: boolean;
+  key_used: boolean;
+}
+
 export interface SessionRoom {
   slot: number;
   room_id: number;
@@ -100,6 +106,8 @@ export interface SessionRoom {
   /** AI 가 이 게임용으로 새로 만든 방 */
   ai_generated?: boolean;
   hint_count: number;
+  phone_hint_count?: number | null;
+  door_key?: DoorKeyState | null;
   cleared_by: string | null;
   cleared_at: string | null;
   clues: ClueState[];
