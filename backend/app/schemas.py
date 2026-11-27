@@ -112,6 +112,12 @@ class InventoryItem(BaseModel):
     used: bool
 
 
+class DoorKeyState(BaseModel):
+    reward: str
+    key_obtained: bool
+    key_used: bool
+
+
 class SessionRoomPublic(BaseModel):
     slot: int
     room_id: int
@@ -125,6 +131,8 @@ class SessionRoomPublic(BaseModel):
     is_final: bool
     ai_generated: bool = False   # AI 가 이 게임용으로 새로 만든 방
     hint_count: int
+    phone_hint_count: Optional[int] = None
+    door_key: Optional[DoorKeyState] = None
     cleared_by: Optional[str] = None
     cleared_at: Optional[str] = None
     clues: list[ClueState]
@@ -191,6 +199,7 @@ class ActionResponse(BaseModel):
 
 
 class HintRequest(BaseModel):
+    phone: bool = False
     level: int = Field(0, ge=0, le=10)
 
 

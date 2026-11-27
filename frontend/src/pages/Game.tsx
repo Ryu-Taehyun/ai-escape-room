@@ -58,13 +58,18 @@ const MARK_MS = 6000;
 const hasStudyPhone = (room: SessionRoom) =>
   room.has_puzzle && room.clues.some((clue) => clue.id === 'phone' && clue.object === 'phone');
 
+const isPhoneLocked = (room: SessionRoom) =>
+  room.phone_hint_count != null
+    ? !room.clues.some((clue) => clue.id === 'phone' && clue.found)
+    : hasStudyPhone(room) && !room.puzzle_solved && room.status !== 'cleared';
+
 const toEngineRooms = (s: SessionState): EngineRoom[] =>
   s.rooms.map((r) => ({
     slot: r.slot,
     name: r.name,
     status: r.status,
     is_final: r.is_final,
-    has_puzzle: r.has_puzzle && !(s.theme.style.decor === 'study' && hasStudyPhone(r)),
+    has_puzzle: r.has_puzzle && !(s.theme.style.decor === 'study' && hasStudyPhone(r) && r.phone_hint_count == null),
     puzzle_solved: r.puzzle_solved,
     clues: r.clues.map((c) => ({ id: c.id, label: c.label, object: c.object, pos: c.pos, found: c.found })),
     minigame: r.minigame ? { type: r.minigame.type, title: r.minigame.title, key_obtained: r.minigame.key_obtained, key_used: r.minigame.key_used } : null,
@@ -80,12 +85,16 @@ function nextObjective(room: SessionRoom | undefined, kind: ThemeKind, isLast: b
   const found = room.clues.filter((c) => c.found).length;
   const mg = room.minigame;
   if (room.has_puzzle && !room.puzzle_solved) {
-    if (study && hasStudyPhone(room)) return '벽 달력과 일기장을 대조해 피해자의 휴대폰을 열어라';
+    if (study && hasStudyPhone(room)) {
+      if (isPhoneLocked(room)) return '방 안의 단서로 피해자의 휴대폰을 열어라';
+      if (room.door_key) return '휴대폰 단서로 책상 위 번호 자물쇠를 풀어라';
+    }
     if (found < room.clues.length) return `방을 조사해 단서를 찾아라 (${found}/${room.clues.length})`;
     return egypt ? '제단의 비문에 답을 새겨라' : study ? '책상 위 번호 자물쇠를 풀어라' : '단말기에 접속해 암호를 풀어라';
   }
   if (mg && !mg.key_obtained) return `「${mg.title}」에 도전해 ${mg.reward}을(를) 얻어라`;
-  if (mg && !mg.key_used) return `문으로 가서 ${mg.reward}을(를) 사용하라`;
+  const key = room.door_key ?? mg;
+  if (key && !key.key_used) return `문으로 가서 ${key.reward}을(를) 사용하라`;
   return '문으로 가라';
 }
 
@@ -262,8 +271,8 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
     async (slot: number) => {
       const room = stateRef.current?.rooms[slot];
       if (!room || room.status === 'cleared' || busyRef.current) return;
-      const mg = room.minigame;
-      if (mg && mg.key_obtained && !mg.key_used) {
+      const key = room.door_key ?? room.minigame;
+      if (key?.key_obtained && !key.key_used) {
         busyRef.current = true;
         try {
           const r = await api.useKey(sessionId, slot, nameRef.current);
@@ -278,8 +287,8 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
         return;
       }
       const missing: string[] = [];
-      if (room.has_puzzle && !room.puzzle_solved) missing.push(kind === 'study' && hasStudyPhone(room) ? '휴대폰 잠금 해제' : copy.needPuzzle);
-      if (mg && !mg.key_obtained) missing.push(`🔑 ${mg.reward}`);
+      if (room.has_puzzle && !room.puzzle_solved) missing.push(kind === 'study' && isPhoneLocked(room) ? '휴대폰 잠금 해제' : copy.needPuzzle);
+      if (key && !key.key_obtained) missing.push(`🔑 ${key.reward}`);
       sound('locked');
       showToast(missing.length ? `${copy.doorLocked} — 필요한 것: ${missing.join(', ')}` : copy.doorLocked, 'bad');
     },
@@ -331,7 +340,7 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
     if (t.kind === 'clue') {
       const room = stateRef.current.rooms[t.slot];
       const clue = room?.clues.find(c => c.id === t.id);
-      if (kind === 'study' && clue?.id === 'phone' && clue.object === 'phone' && !clue.found && room.has_puzzle && !room.puzzle_solved && room.status !== 'cleared') {
+      if (kind === 'study' && clue?.id === 'phone' && clue.object === 'phone' && !clue.found && isPhoneLocked(room)) {
         openModal({ kind: 'phone', slot: t.slot, target: t });
       } else {
         void inspect(t);

@@ -12,10 +12,10 @@ from app.main import app
 from app.seed_data import THEMES
 from app.seed_variants import VARIANTS
 
-# 문제의 정답 (보통은 seed_data.py, 쉬움/어려움은 seed_variants.py) - 바뀌면 이 표도 함께 확인
+# 난이도별 방 퍼즐 정답. 휴대폰 PIN은 별도 테스트에서 확인한다.
 EXPECTED = {
     "horror": [("3142", "3142", "2413"), ("HELP", "HELP", "RESCUE"), ("8", "64", "320"), ("", "", "724"), ("58", "58", "116")],
-    "study": [("4324", "4324", "2443"), ("1103", "1103", "0311"), ("서랍속", "서랍속", "서랍속"), ("2347", "2347", "2340"), ("1974", "1974", "1998")],
+    "study": [("4324", "4324", "2443"), ("2341", "2341", "2341"), ("서랍속", "서랍속", "서랍속"), ("2347", "2347", "2340"), ("1974", "1974", "1998")],
     "egypt": [("1035", "1035", "2407"), ("사람", "사람", "구멍"), ("6", "12", "13"), ("은", "동", "금"), ("30", "30", "43")],
 }
 
@@ -139,3 +139,38 @@ def test_hint_penalty_scales_with_time_limit(minutes, normal, easy, hard):
         res = c.post(f"/api/sessions/{s['id']}/rooms/0/hint", json={"level": 0}).json()
         assert res["penalty_sec"] == normal
         assert before - c.get(f"/api/sessions/{s['id']}").json()["remaining_seconds"] >= normal - 2
+
+
+
+@pytest.mark.parametrize(("difficulty", "pin"), [("easy", "1103"), ("normal", "1103"), ("hard", "0311")])
+def test_study_phone_clue_then_number_lock_key(difficulty, pin):
+    with TestClient(app) as client:
+        created = client.post("/api/sessions", json={
+            "theme_key": "study", "room_count": 5, "time_limit_min": 30, "difficulty": difficulty,
+        }).json()
+        sid = created["id"]
+        game_logic.admin_force_unlock(sid, 1)
+        room = f"/api/sessions/{sid}/rooms/1"
+
+        assert client.post(f"{room}/clues/phone/inspect", json={}).status_code == 403
+        assert not client.post(f"{room}/answer", json={"answer": "2341"}).json()["correct"]
+        assert not client.post(f"{room}/phone/unlock", json={"answer": "2341"}).json()["correct"]
+
+        phone = client.post(f"{room}/phone/unlock", json={"answer": pin}).json()
+        assert phone["correct"]
+        assert not phone["state"]["rooms"][1]["puzzle_solved"]
+        assert not phone["state"]["rooms"][1]["door_key"]["key_obtained"]
+        clue = client.post(f"{room}/clues/phone/inspect", json={}).json()["clue"]
+        assert "가장 이른 부재중 전화" in clue["text"]
+        assert not client.post(f"{room}/answer", json={"answer": pin}).json()["correct"]
+
+        answer = client.post(f"{room}/answer", json={"answer": "2341"}).json()
+        assert answer["correct"] and answer["state"]["rooms"][2]["status"] == "locked"
+        assert answer["state"]["rooms"][1]["door_key"]["key_obtained"]
+        assert answer["state"]["rooms"][1]["minigame"] is None
+        retry = client.post(f"{room}/answer", json={"answer": "2341"}).json()
+        assert sum(i["kind"] == "key" and i["slot"] == 1 for i in retry["state"]["inventory"]) == 1
+
+        door = client.post(f"{room}/use-key", json={}).json()
+        assert door["success"] and door["state"]["rooms"][1]["door_key"]["key_used"]
+        assert door["state"]["rooms"][2]["status"] == "unlocked"
