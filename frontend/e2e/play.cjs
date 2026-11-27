@@ -227,7 +227,7 @@ const check = (name, ok, extra = '') => {
     await page.evaluate(([s, t]) => fetch(`/api/admin/sessions/${s}/rooms/1/unlock`, { method: 'POST', headers: { 'X-Admin-Token': t } }), [sid, tok]);
     await page.waitForTimeout(1500);
     const st3 = await api(`/api/sessions/${sid}`);
-    for (const [obj, sel] of [['calendar', '.rv-calendar'], ['phone', '.rv-phone'], ['diary', '.rv-diary']]) {
+    for (const [obj, sel] of [['calendar', '.rv-calendar'], ['diary', '.rv-diary'], ['phone', '.pz-input input']]) {
       const c = st3.rooms[1].clues.find((k) => k.object === obj);
       if (!c) continue;
       const wall = obj === 'calendar';
@@ -245,6 +245,18 @@ const check = (name, ok, extra = '') => {
         shown = await page.waitForSelector(sel, { timeout: 5000 }).then(() => true, () => false);
       }
       check(`붉은 서재: ${obj} 전용 단서 화면`, shown);
+      if (obj === 'phone') {
+        const endpoint = `/api/sessions/${sid}/rooms/1/clues/${c.id}/inspect`;
+        const blocked = await page.evaluate(p => fetch(p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(r => r.status), endpoint);
+        check('잠긴 휴대폰 단서 조회 차단', blocked === 403);
+        await page.fill(sel, '0000');
+        await page.keyboard.press('Enter');
+        await page.waitForSelector('.pz-message.bad');
+        check('오답 입력 후 휴대폰 단서 숨김', !(await page.$('.rv-phone')));
+        await page.fill(sel, st3.difficulty === 'hard' ? '0311' : '1103');
+        await page.keyboard.press('Enter');
+        await page.waitForSelector('.rv-phone', { timeout: 10000 });
+      }
       await shot(`07-${obj}`);
     }
     // 귀신 액자: 2.5초 이상 바라보면 튀어나온다

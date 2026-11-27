@@ -325,11 +325,16 @@ def submit_answer(session_id: str, slot: int, answer: str, player_name: str) -> 
 # ---------- 단서 ----------
 def inspect_clue(session_id: str, slot: int, clue_id: str, player_name: str) -> tuple[dict, bool]:
     """(단서, 새로 발견했는지)"""
-    _require_playing(session_id)
-    _, room = _open_slot(session_id, slot)
+    session = _require_playing(session_id)
+    target, room = _open_slot(session_id, slot)
     clue = next((c for c in room.get("clues", []) if c["id"] == clue_id), None)
     if not clue:
         raise GameError("존재하지 않는 단서입니다.", 404)
+    if (clue.get("object") == "phone" and has_puzzle(room)
+            and not target["puzzle_solved"] and target["status"] != "cleared"
+            and repo.get_theme(session["theme_id"])["style"].get("decor") == "study"
+            and not repo.get_item(session_id, slot, "clue", clue_id)):
+        raise GameError("휴대폰이 잠겨 있습니다. 방 안의 단서로 비밀번호를 풀어 주세요.", 403)
     is_new = repo.add_item(session_id, slot, "clue", clue_id, clue["label"], clue["text"], player_name)
     return clue, is_new
 

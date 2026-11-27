@@ -23,6 +23,7 @@ interface Props {
   timeLimitMin?: number; // 이 게임의 제한 시간(분) — 감점 규칙 안내용
   onClose: () => void;
   onEscape: () => void; // ESC 로 닫기 (재고정 시도 안 함)
+  phone?: boolean;
   onSolved: () => void;
   onState: (s: SessionState) => void;
   onSound: (name: SfxName) => void;
@@ -30,7 +31,7 @@ interface Props {
 
 type Status = 'idle' | 'busy' | 'denied' | 'granted';
 
-export default function PuzzleModal({ sessionId, room, playerName, disabled, kind, copy, remaining, hintPenalty, timeLimitMin, onClose, onEscape, onSolved, onState, onSound }: Props) {
+export default function PuzzleModal({ sessionId, room, playerName, disabled, kind, copy, remaining, hintPenalty, timeLimitMin, phone = false, onClose, onEscape, onSolved, onState, onSound }: Props) {
   const [answer, setAnswer] = useState('');
   const [status, setStatus] = useState<Status>('idle');
   const [message, setMessage] = useState('');
@@ -113,7 +114,7 @@ export default function PuzzleModal({ sessionId, room, playerName, disabled, kin
       <div className={`pz pz-${status} ${shake ? `shake-${shake % 2}` : ''}`}>
         <div className="pz-head">
           <span className="pz-sys">
-            {copy.puzzleSystem} {String(room.slot + 1).padStart(2, '0')}
+            {phone ? "휴대폰 잠금 화면" : `${copy.puzzleSystem} ${String(room.slot + 1).padStart(2, '0')}`}
           </span>
           <span className={`pz-timer ${remaining < 300 ? 'warn' : ''}`} title={copy.timerLabel}>
             ⏳ {formatTime(remaining)}
@@ -127,7 +128,7 @@ export default function PuzzleModal({ sessionId, room, playerName, disabled, kin
           <section className="pz-screen pz-main" aria-label="문제">
             <div className="pz-tab">🔐 문제</div>
             <div className="pz-boot">
-              {copy.puzzleBoot(room.name).map((line, i) => (
+              {(phone ? ["잠긴 휴대폰입니다. 방 안의 기록을 대조해 비밀번호를 입력하세요."] : copy.puzzleBoot(room.name)).map((line, i) => (
                 <p key={i} style={{ animationDelay: `${i * 140}ms` }}>
                   {line}
                 </p>
@@ -165,6 +166,8 @@ export default function PuzzleModal({ sessionId, room, playerName, disabled, kin
                   <span className="pz-prompt">{copy.prompt}</span>
                   <input
                     ref={inputRef}
+                    type={phone ? 'password' : 'text'}
+                    inputMode={phone ? 'numeric' : 'text'}
                     value={answer}
                     placeholder={copy.inputPlaceholder}
                     disabled={disabled || status === 'busy'}
@@ -177,7 +180,7 @@ export default function PuzzleModal({ sessionId, room, playerName, disabled, kin
                     spellCheck={false}
                   />
                   <button type="submit" className="pz-btn primary" disabled={disabled || status === 'busy'}>
-                    {copy.submit}
+                    {phone ? '잠금 해제' : copy.submit}
                   </button>
                 </form>
               )

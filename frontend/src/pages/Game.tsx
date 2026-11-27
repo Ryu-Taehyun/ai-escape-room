@@ -37,7 +37,7 @@ interface Props {
 const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab']);
 const RESUME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Enter']);
 
-type Modal = { kind: 'puzzle' | 'minigame'; slot: number } | { kind: 'map' | 'inventory' | 'admin' | 'pause' } | null;
+type Modal = { kind: 'phone'; slot: number; target: InteractTarget } | { kind: 'puzzle' | 'minigame'; slot: number } | { kind: 'map' | 'inventory' | 'admin' | 'pause' } | null;
 
 interface Toast {
   key: number;
@@ -324,8 +324,15 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
   const handlersRef = useRef({ onInteract: (_t: InteractTarget) => {} });
   handlersRef.current.onInteract = (t: InteractTarget) => {
     if (stateRef.current?.status !== 'playing') return;
-    if (t.kind === 'clue') inspect(t);
-    else if (t.kind === 'door') tryDoor(t.slot);
+    if (t.kind === 'clue') {
+      const room = stateRef.current.rooms[t.slot];
+      const clue = room?.clues.find(c => c.id === t.id);
+      if (kind === 'study' && clue?.object === 'phone' && !clue.found && room.has_puzzle && !room.puzzle_solved && room.status !== 'cleared') {
+        openModal({ kind: 'phone', slot: t.slot, target: t });
+      } else {
+        void inspect(t);
+      }
+    } else if (t.kind === 'door') tryDoor(t.slot);
     else openModal({ kind: t.kind, slot: t.slot });
   };
 
@@ -673,7 +680,7 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
         <MiniMap rooms={state.rooms} currentSlot={currentSlot} myPos={myPos} myName={me} players={others} marks={marks} title={copy.mapTitle} onClose={closeAndResume} />
       )}
       {modal?.kind === 'inventory' && <InventoryPanel state={state} title={copy.inventoryTitle} empty={copy.inventoryEmpty} onClose={closeAndResume} />}
-      {modal?.kind === 'puzzle' && modalRoom && (
+      {(modal?.kind === 'puzzle' || modal?.kind === 'phone') && modalRoom && (
         <PuzzleModal
           key={modalRoom.slot}
           sessionId={sessionId}
@@ -687,7 +694,11 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
           timeLimitMin={state.time_limit_min}
           onEscape={closeOnly}
           onClose={closeAndResume}
-          onSolved={closeAndResume}
+          phone={modal.kind === 'phone'}
+          onSolved={() => {
+            closeAndResume();
+            if (modal.kind === 'phone') void inspect(modal.target);
+          }}
           onState={applyState}
           onSound={sound}
         />
