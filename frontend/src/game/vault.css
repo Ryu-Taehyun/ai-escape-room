@@ -1,0 +1,15 @@
+.decor-vault.lobby2 { background: radial-gradient(ellipse at top right,#2d493d,transparent 65%),#101a16; }
+.theme-vault { --vault-gold:#dbbc75; }
+.clue-doc.doc-vault { background:#eee8d6; color:#252d28; border:1px solid #ae9b68; border-top:5px solid #304d40; border-radius:3px; text-shadow:none; }
+.doc-vault .vault-source { font:600 .7rem/1.6 monospace; letter-spacing:.12em; opacity:.78; }
+.doc-vault .doc-label { color:inherit; border-bottom:1px solid currentColor; padding-bottom:.4em; }
+.doc-vault .doc-text { color:inherit; }
+.doc-vault.vault-tablet { background:#112c24; color:#c5f5d5; border-color:#799487; font-family:monospace; }
+.doc-vault.vault-book { border-left:8px solid #554531; background:repeating-linear-gradient(#eee8d6 0 24px,#ddd6c2 25px); }
+.doc-vault.vault-box { border:2px dashed #87784f; }
+.doc-vault.vault-note { background:#f4e5ae; }
+.doc-vault .doc-stamp { color:inherit; }
+.doc-vault .doc-stamp.new { color:#296144; animation:vault-stamp .25s ease-out; }
+.vault-tablet .doc-stamp.new { color:#a9e7c5; }
+@keyframes vault-stamp { from { opacity:0; transform:scale(1.2) rotate(-4deg); } to { opacity:1; transform:scale(1); } }
+@media (prefers-reduced-motion:reduce) { .doc-vault .doc-stamp.new { animation:none; } }

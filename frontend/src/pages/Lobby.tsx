@@ -16,6 +16,7 @@ const NAME_KEY = 'escape-player-name';
 const TIME_PRESETS = [30, 60, 90, 120];
 const MINIGAME_LABEL = { sequence: '기억력', wires: '전선 연결', timing: '타이밍' } as const;
 const THEME_META: Record<string, { icon: string; mood: string; tags: string[] }> = {
+  vault: { icon: '🏦', mood: '잠입 추리', tags: ['야간 경비', '대여금고', '출입 기록'] },
   study: { icon: '🕯️', mood: '추리 공포', tags: ['1998', '살인사건', '저택'] },
   server: { icon: '☣️', mood: '공포', tags: ['해킹', '바이러스', '어둠'] },
   pillar: { icon: '🏺', mood: '모험', tags: ['파라오', '수수께끼', '보물'] },
@@ -27,6 +28,10 @@ const GLYPH_BAND = glyphBandDataURL();
 
 /** 선택한 테마에 따라 바뀌는 로비 문구 */
 const LOBBY_COPY: Record<string, { badge: string; sub: string[]; start: string; features: { icon: string; title: string; text: string }[]; log?: string[] }> = {
+  vault: {
+    badge: '중앙은행 · 야간 근무', sub: ['직원 통로의 문이 열려 있다. 천장에서는 카메라 모터가 돌아간다.', '순찰 기록과 금고 장부를 대조해 출구를 찾아라.'], start: '금고층에 잠입한다',
+    features: [{ icon: '📋', title: '교대 기록', text: '순찰표와 카메라 기록에서 빈 시간을 찾아라' }, { icon: '🗄️', title: '대여금고', text: '장부와 현물의 차이를 확인하라' }],
+  },
   study: {
     badge: 'CASE FILE · 1998.11.17 · 23:47',
     sub: ['비가 그치지 않던 밤, 와인 수집가 한도윤이 서재에서 숨진 채 발견됐다.', '그가 남긴 쪽지와 멈춘 시계가, 24년 전 사라진 동업자 J를 가리킨다.'],

@@ -3,7 +3,7 @@ export type SfxName =
   | 'locked' | 'door' | 'scare' | 'rumble' | 'spark' | 'breath' | 'mark' | 'thunder';
 
 export declare class GameAudio {
-  constructor(kind?: 'study' | 'horror' | 'egypt' | 'neutral');
+  constructor(kind?: 'vault' | 'study' | 'horror' | 'egypt' | 'neutral');
   readonly kind: string;
   muted: boolean;
   start(): void;

@@ -467,6 +467,11 @@ export class GameAudio {
         this._burst({ type: 'bandpass', freq: 650, q: 0.6, gain: 0.06, attack: 0.08, decay: 0.45, delay: 0.42 });
         break;
       case 'clue':
+        if (this.kind === 'vault') {
+          this._tone({ f0: 920, gain: 0.046, decay: 0.08 });
+          this._tone({ f0: 1380, gain: 0.04, decay: 0.12, delay: 0.09 });
+          break;
+        }
         for (let i = 0; i < 3; i++) this._burst({ type: 'bandpass', freq: 3800 + Math.random() * 1500, q: 1.2, gain: 0.07, decay: 0.06, delay: i * 0.07 });
         break;
       case 'type':
@@ -487,6 +492,11 @@ export class GameAudio {
         }
         break;
       case 'fail':
+        if (this.kind === 'vault') {
+          this._caption('출입 단말기 경보음');
+          for (const delay of [0, 0.24]) this._tone({ type: 'triangle', f0: 660, f1: 420, gain: 0.09, decay: 0.19, delay });
+          break;
+        }
         if (egypt) {
           this._tone({ f0: 82, f1: 70, gain: 0.3, decay: 1.4 });
           this._burst({ type: 'highpass', freq: 3500, gain: 0.05, attack: 0.1, decay: 1.2 });

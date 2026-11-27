@@ -332,3 +332,7 @@ THEMES = [
         ],
     },
 ]
+
+from .vault_theme import VAULT_THEME
+
+THEMES.append(VAULT_THEME)

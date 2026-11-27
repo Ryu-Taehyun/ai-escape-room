@@ -16,7 +16,7 @@ class ThemeStyle(BaseModel):
     fog: str = "#000000"
     accent: str = "#00ffff"
     ambient: float = 0.25
-    decor: Literal["study", "server", "pillar", "none"] = "none"
+    decor: Literal["study", "server", "pillar", "vault", "none"] = "none"
 
 
 # ---------- 단서 / 미니게임 (방 콘텐츠) ----------

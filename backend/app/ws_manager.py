@@ -25,12 +25,15 @@
   welcome 에는 서버가 정한 내 이름(name, 중복 시 번호 붙음)도 들어 있다
 """
 import asyncio
+import logging
 import secrets
 import time
 from dataclasses import dataclass, field
 
 from fastapi import WebSocket
 
+
+log = logging.getLogger(__name__)
 
 @dataclass
 class Player:
@@ -101,8 +104,8 @@ class ConnectionManager:
             await player.ws.send_json(
                 {"type": "chat", "player_id": "system", "name": "SYSTEM", "text": text[:300], "ts": time.time()}
             )
-        except Exception:  # noqa: BLE001 - 끊긴 소켓은 수신 루프에서 정리된다
-            pass
+        except Exception as e:  # noqa: BLE001 - 끊긴 소켓은 수신 루프에서 정리된다
+            log.debug("notice 전송 실패 (player=%s): %s", player.id, e)
 
     async def chat(self, session_id: str, player: Player | None, text: str) -> None:
         await self.broadcast(

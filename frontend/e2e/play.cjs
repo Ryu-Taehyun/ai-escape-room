@@ -14,8 +14,8 @@ const fs = require('fs');
 const path = require('path');
 
 const THEME = process.argv[2] || 'study';
-const DECOR = { study: 'study', horror: 'server', egypt: 'pillar' }[THEME] || 'study';
-const FIRST_ANSWER = { study: '4324', horror: '3142', egypt: '1035' }[THEME];
+const DECOR = { vault: 'vault', study: 'study', horror: 'server', egypt: 'pillar' }[THEME] || 'study';
+const FIRST_ANSWER = { vault: '0215', study: '4324', horror: '3142', egypt: '1035' }[THEME];
 
 /** 관리자 비밀번호: 환경 변수 → 실행 중인 서버가 쓰는 backend/.env → 기본값 순 */
 function adminPassword() {
@@ -99,6 +99,9 @@ const check = (name, ok, extra = '') => {
   await page.waitForTimeout(2500);
   await page.keyboard.press('KeyE');
   await page.waitForSelector('.clue-doc', { timeout: 8000 });
+  if (THEME === 'vault') {
+    check('금고 자료 원문과 출처 표시', !!(await page.$('.doc-vault .vault-source')) && !!(await page.textContent('.doc-vault .doc-text')));
+  }
   check('단서 문서 표시 + 마우스 유지', await locked());
   await shot('02-clue');
 

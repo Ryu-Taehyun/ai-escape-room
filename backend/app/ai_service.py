@@ -141,6 +141,7 @@ _RIDDLES = [
     ("항상 오고 있지만 결코 도착하지 않는 것은?", "내일", ["시간과 관련 있습니다.", "오늘이 지나면 ..."]),
 ]
 _MOOD = {
+    "vault": ["야간 순찰이 지나간", "감시등이 켜진", "강철문이 잠긴"],
     "study": ["촛불이 일렁이는", "창밖에 비가 쏟아지는", "오래된 와인 냄새가 밴"],
     "horror": ["깜빡이는 형광등 아래", "식은 공기가 감도는", "누군가 방금 떠난 듯한"],
     "egypt": ["모래 먼지가 흩날리는", "횃불이 일렁이는", "금빛 상형문자가 빛나는"],
@@ -148,7 +149,7 @@ _MOOD = {
 
 
 _CLUE_SPOTS = [[-3.0, 2.4], [3.0, 2.2], [-4.2, -2.6], [2.8, -2.2], [0.0, 2.8]]
-_REWARDS = {"study": ["놋쇠 열쇠", "녹슨 열쇠", "검은 철문 열쇠"], "horror": ["보안 카드키", "비상 열쇠", "마스터 키"], "egypt": ["황금 열쇠", "스카라베 열쇠", "신전의 열쇠"]}
+_REWARDS = {"vault": ["금고 열쇠", "경비원 카드키", "비상구 열쇠"], "study": ["놋쇠 열쇠", "녹슨 열쇠", "검은 철문 열쇠"], "horror": ["보안 카드키", "비상 열쇠", "마스터 키"], "egypt": ["황금 열쇠", "스카라베 열쇠", "신전의 열쇠"]}
 _MINIGAME_TITLES = {"sequence": "불빛 순서 기억", "wires": "끊어진 회로 연결", "timing": "정밀 타이밍 해제"}
 
 
@@ -403,6 +404,8 @@ async def _generate_rooms(provider: AIProvider, theme: dict, rooms: list[dict], 
     for t in pending:
         t.cancel()
         log.warning("AI session room %d timed out → 기본 방 사용", tasks[t])
+    if pending:  # 취소가 끝날 때까지 기다린다 (결과를 회수하지 않은 작업의 'never retrieved' 경고 방지)
+        await asyncio.gather(*pending, return_exceptions=True)
     out: dict[int, dict] = {}
     for t in done:
         slot = tasks[t]

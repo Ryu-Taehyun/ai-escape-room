@@ -14,7 +14,7 @@ export interface ThemeStyle {
   fog: string;
   accent: string;
   ambient: number;
-  decor: 'study' | 'server' | 'pillar' | 'none';
+  decor: 'vault' | 'study' | 'server' | 'pillar' | 'none';
 }
 
 export interface ThemeSummary {

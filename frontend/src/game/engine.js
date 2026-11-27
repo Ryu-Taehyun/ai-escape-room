@@ -49,6 +49,7 @@ const INTERACT_DIST = 3;
 const MOVE_SEND_MS = 80;
 
 const THEME_CFG = {
+  vault: { fog: 0x10221c, density: 0.024, ambient: 0.32, hemi: 0.8, exposure: 1.18, roomLight: 0xffdfae },
   study: { fog: 0x1c0d0b, density: 0.03, ambient: 0.08, hemi: 2.1, exposure: 1.45, roomLight: 0xffb070 },
   horror: { fog: 0x040506, density: 0.072, ambient: 0.05, hemi: 0.05, exposure: 1.25, roomLight: 0xcfe6ff },
   egypt: { fog: 0x1a1108, density: 0.045, ambient: 0.16, hemi: 0.22, exposure: 1.15, roomLight: 0xff9a4a },
@@ -98,7 +99,8 @@ export class EscapeEngine {
     this.container = container;
     this.rooms = options.rooms.map((r) => ({ ...r }));
     this.style = options.style;
-    this.kind = this.style.decor === 'study' ? 'study' : this.style.decor === 'server' ? 'horror' : this.style.decor === 'pillar' ? 'egypt' : 'neutral';
+    this.vaultCameras = [];
+    this.kind = this.style.decor === 'vault' ? 'vault' : this.style.decor === 'study' ? 'study' : this.style.decor === 'server' ? 'horror' : this.style.decor === 'pillar' ? 'egypt' : 'neutral';
     this.cfg = THEME_CFG[this.kind];
     this.cb = options;
     this.audio = options.audio || null;
@@ -377,9 +379,33 @@ export class EscapeEngine {
       if (room.minigame) this._buildMinigameObject(i, x, room.minigame);
       if (K === 'horror') this._decorHorror(i, x, room);
       else if (K === 'egypt') this._decorEgypt(i, x, room);
+      else if (K === 'vault') this._decorateVault(i, x);
       else if (K === 'study') this.study.decorate(i, x, room);
       this._buildRoomSign(i, x, room);
     });
+  }
+
+  _decorateVault(slot, x) {
+    const steel = this._plain(0x586860, 0.38, 0.7);
+    const brass = this._plain(0xc09c5e, 0.3, 0.75);
+    const charcoal = this._plain(0x172822, 0.55, 0.35);
+    const camera = new THREE.Group();
+    camera.position.set(x + 3.7, 3.35, -4.45);
+    this.scene.add(camera);
+    this._box(0.32, 0.25, 0.58, steel, 0, 0, 0, camera);
+    this._box(0.20, 0.14, 0.08, charcoal, 0, 0, 0.31, camera);
+    this._box(0.05, 0.04, 0.04, new THREE.MeshBasicMaterial({ color: 0xfe644c }), 0.12, 0.04, 0.31, camera);
+    this.vaultCameras[slot] = camera;
+    // Keep the deposit boxes flush with the rear wall and outside clue positions.
+    this._box(5.6, 2.15, 0.12, charcoal, x, 1.65, 4.82);
+    for (let row = 0; row < 3; row++) {
+      for (let column = 0; column < 7; column++) {
+        const cx = x + (column - 3) * 0.78;
+        const cy = 1 + row * 0.66;
+        this._box(0.75, 0.62, 0.09, steel, cx, cy, 4.7);
+        this._box(0.19, 0.045, 0.06, brass, cx, cy, 4.63);
+      }
+    }
   }
 
   _buildDoor(wx, slot, isExit) {
@@ -614,7 +640,7 @@ export class EscapeEngine {
       this.markers[slot] = { kind: 'plain', mat: markerMat };
       this._addCollider(x, PUZZLE_POS[1], 0.75, 0.4);
     }
-    group.userData.target = { kind: 'puzzle', slot, label: K === 'egypt' ? '신성한 비문' : K === 'horror' ? '보안 단말기' : '단말기' };
+    group.userData.target = { kind: 'puzzle', slot, label: K === 'egypt' ? '신성한 비문' : K === 'vault' ? '금고층 출입 단말기' : K === 'horror' ? '보안 단말기' : '단말기' };
     this.scene.add(group);
     this.interactables.push(group);
   }
@@ -1661,6 +1687,7 @@ export class EscapeEngine {
     }
 
     this._updateLights(t, dt);
+    this.vaultCameras[this.currentSlot]?.lookAt(this.head.position);
     if (this.study) {
       this.study.update(dt, t, Math.max(0, this.currentSlot), playing);
       this.hemi.intensity = this.cfg.hemi * (this.blackoutUntil > t ? 0.35 : 1) + this.study.lightning * 3.5; // 번개 칠 때 방이 번쩍

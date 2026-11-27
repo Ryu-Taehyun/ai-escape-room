@@ -18,7 +18,8 @@ def _db_path() -> str:
 class Settings:
     APP_ENV: str = os.getenv("APP_ENV", "development")
     DATABASE_PATH: str = _db_path()
-    ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "admin1234")
+    # 코드에 기본값을 두지 않는다 → backend/.env 에서 반드시 입력 (비어 있으면 관리자 로그인이 꺼진다)
+    ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "").strip()
 
     AI_PROVIDER: str = os.getenv("AI_PROVIDER", "mock").lower()
     AI_API_KEY: str = os.getenv("AI_API_KEY", "")
@@ -74,6 +75,11 @@ class Settings:
         return self.ADMIN_PASSWORD in ("admin1234", "change-me", "")
 
     @property
+    def admin_login_enabled(self) -> bool:
+        """비밀번호를 설정하지 않았으면 관리자 로그인 자체를 막는다 (빈 비밀번호로 로그인되는 것 방지)"""
+        return bool(self.ADMIN_PASSWORD)
+
+    @property
     def admin_password_is_weak(self) -> bool:
         """12자 미만이거나 한 종류의 문자만 쓰면 약한 비밀번호"""
         pw = self.ADMIN_PASSWORD
@@ -86,6 +92,8 @@ class Settings:
 
     def check_startup(self) -> None:
         """서버 시작 전 설정 점검. 운영 환경에서 기본 관리자 비밀번호면 시작을 거부한다."""
+        if self.is_production and not self.admin_login_enabled:
+            raise RuntimeError("APP_ENV=production 에서는 backend/.env 의 ADMIN_PASSWORD 를 반드시 입력해야 합니다.")
         if self.is_production and (self.admin_password_is_default or self.admin_password_is_weak):
             raise RuntimeError(
                 "APP_ENV=production 에서는 기본값이거나 약한 관리자 비밀번호(12자 미만, 문자 종류 1가지)로 "

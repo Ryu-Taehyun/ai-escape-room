@@ -11,6 +11,7 @@ import { useGameSocket, type MarkEvent } from '../hooks/useGameSocket';
 import MiniMap from '../components/MiniMap';
 import MiniStrip, { type MapMark } from '../components/MiniStrip';
 import PuzzleModal from '../components/PuzzleModal';
+import '../game/vault.css';
 import ClueDoc, { RICH_OBJECTS, type ClueDocData } from '../components/ClueDoc';
 import InventoryPanel from '../components/InventoryPanel';
 import ChatPanel from '../components/ChatPanel';
@@ -591,7 +592,7 @@ export default function Game({ sessionId, playerName, onExit, onRestart }: Props
       {loading && !waiting && (
         <div className="loading-screen">
           <div className="loading-spinner" />
-          <div>{kind === 'egypt' ? '무덤 안으로 들어가는 중…' : kind === 'horror' ? '시설에 접속하는 중…' : kind === 'study' ? '빗속에서 저택 문을 두드리는 중…' : '방을 준비하는 중…'}</div>
+          <div>{kind === 'egypt' ? '무덤 안으로 들어가는 중…' : kind === 'horror' ? '시설에 접속하는 중…' : kind === 'study' ? '빗속에서 저택 문을 두드리는 중…' : kind === 'vault' ? '금고층 출입 기록을 조회하는 중…' : '방을 준비하는 중…'}</div>
         </div>
       )}
 

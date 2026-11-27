@@ -17,6 +17,7 @@ CHALLENGE_TTL = 300
 MINIGAME_TYPES = ("sequence", "wires", "timing")
 
 SYMBOLS = {
+    "vault": ["🔑", "🔒", "💳", "💰"],
     "study": ["🍷", "🕯️", "🗝️", "🕰️"],
     "server": ["🔴", "🟢", "🔵", "🟡"],
     "pillar": ["☀️", "🌙", "🐍", "🦅"],

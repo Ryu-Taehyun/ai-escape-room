@@ -22,6 +22,7 @@ export interface ClueDocData {
 export const RICH_OBJECTS: ClueObject[] = ['phone', 'diary', 'calendar', 'clock', 'bookshelf', 'portrait', 'body'];
 
 function variant(kind: ThemeKind, obj: ClueObject): string {
+  if (kind === 'vault') return `vault vault-${obj}`;
   if (kind === 'study') {
     if (obj === 'board') return 'bloodwall';
     if (obj === 'box' || obj === 'jar') return 'tag';
@@ -210,6 +211,7 @@ export default function ClueDoc({ doc, kind, copy }: { doc: ClueDocData; kind: T
   const rich = RICH_OBJECTS.includes(doc.object) ? richBody(doc) : null;
   return (
     <div className={`clue-doc doc-${rich ? `rich rich-${doc.object}` : variant(kind, doc.object)}`} key={doc.key} role="status">
+      {kind === 'vault' && <div className="vault-source">{({ tablet: '관제 시스템 / 조회 기록', board: '보안실 / 게시 자료', book: '문서고 / 장부 사본', box: '보관함 / 물품 확인', note: '직원 메모' } as Record<string, string>)[doc.object] ?? '은행 자료'}</div>}
       <div className="doc-label">{doc.label}</div>
       {rich ?? (
         <div className="doc-text">

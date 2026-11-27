@@ -63,6 +63,8 @@ def _audit(ip: str, payload: dict) -> None:
 
 @router.post("/login", response_model=AdminLoginResponse)
 async def login(body: AdminLoginRequest, request: Request):
+    if not settings.admin_login_enabled:
+        raise HTTPException(status_code=503, detail="관리자 비밀번호가 설정되지 않았습니다. backend/.env 의 ADMIN_PASSWORD 를 입력하세요.")
     ip = client_ip(request)  # 프록시 뒤라면 TRUST_PROXY=true 로 실제 접속 IP 사용
     wait = login_guard.begin(ip)  # 시도를 먼저 기록 → 동시 요청으로 한도를 넘을 수 없음
     if wait:

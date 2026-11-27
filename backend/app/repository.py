@@ -88,11 +88,6 @@ def create_theme_with_rooms(key: str, name: str, description: str, style: dict, 
         return theme_id
 
 
-def insert_room(theme_id: int, order_idx: int, data: dict, source: str) -> int:
-    with get_conn() as c:
-        return _insert_room(c, theme_id, order_idx, data, source)
-
-
 def _insert_room(c, theme_id: int, order_idx: int, data: dict, source: str) -> int:
     cur = c.execute(
         """INSERT INTO rooms (theme_id, order_idx, name, description, puzzle_type, question, answer,

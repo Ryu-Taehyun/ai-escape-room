@@ -107,6 +107,7 @@ cd ../backend && uvicorn app.main:app --host 0.0.0.0 --port 8000
 - 비밀번호는 해시 후 상수 시간 비교 (한글 비밀번호도 안전), 길이 256자 제한, 429 응답에 `Retry-After`
 - 잠금·로그인 성공은 관리자 패널 **편집 로그**에 `security` 로 기록 (서버 로그에도 경고)
 - 로그인 토큰 2시간 만료, 동시에 최대 20개 (넘으면 오래된 것부터 만료), 관리자 응답은 `Cache-Control: no-store`
+- 관리자 비밀번호는 코드에 기본값이 없습니다. `backend/.env` 의 `ADMIN_PASSWORD` 를 비워 두면 관리자 로그인이 꺼지고(503), 운영 환경에서는 서버가 시작되지 않습니다
 - `APP_ENV=production` 에서 기본값이거나 **약한 비밀번호**(12자 미만 또는 문자 종류 1가지)면 서버가 시작을 거부 (개발 환경은 경고만). 운영에서는 API 문서(`/docs`)도 숨김
 - nginx 등 프록시 뒤에서 실행하면 `TRUST_PROXY=true` (프록시가 붙인 `X-Forwarded-For` 의 마지막 값을 접속 IP 로 사용)
 

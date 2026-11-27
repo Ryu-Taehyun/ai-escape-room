@@ -1,7 +1,8 @@
 // 테마별 화면 문구 (공포 / 이집트 / 기본)
-export type ThemeKind = 'study' | 'horror' | 'egypt' | 'neutral';
+export type ThemeKind = 'vault' | 'study' | 'horror' | 'egypt' | 'neutral';
 
 export function themeKind(decor?: string): ThemeKind {
+  if (decor === 'vault') return 'vault';
   return decor === 'study' ? 'study' : decor === 'server' ? 'horror' : decor === 'pillar' ? 'egypt' : 'neutral';
 }
 
@@ -47,6 +48,22 @@ export interface ThemeCopy {
 
 export const COPY: Record<ThemeKind, ThemeCopy> = {
   // 붉은 서재: 팀원 프로젝트의 이야기(1998년, 한도윤, J)를 그대로 가져옴
+  vault: {
+    introEyebrow: '중앙은행 · 지하 금고층', introTitle: '직원 출입문이 열려 있다',
+    introLines: ['새벽 두 시. 순찰이 돌아오기 전까지 금고층을 빠져나가야 한다.', '카메라 아래에 떨어진 교대 메모부터 확인하자.'],
+    introAction: '직원 통로로 들어간다', controls: 'WASD 이동 · E 조사 · F 손전등 · I 조사 기록 · M 도면',
+    focusVerb: { puzzle: '인증한다', clue: '기록을 조사한다', minigame: '장치를 조작한다', door: '잠금 상태를 확인한다' },
+    puzzleSystem: '금고층 출입 단말기', puzzleBoot: room => [room, '야간 출입 통제 중. 인증 정보를 입력하십시오.'],
+    prompt: '›', inputPlaceholder: '인증값 입력', submit: '인증', hint: '기록 대조', close: '접속 종료',
+    granted: '인증 승인', denied: '인증 거부 · 경보 기록 생성', solvedNeedKey: r => `인증 완료. 출입에 필요한 물품: ${r}`,
+    hintLabel: '대조 결과', cluesHeader: '확보한 은행 자료', cluesMissing: '아직 조사하지 않은 자료가 있다.',
+    clueNew: '사본 보관 완료', clueOld: '보관한 사본 열람', doorLocked: '철문의 잠금 볼트가 걸려 있다.',
+    needPuzzle: '출입 인증', minigameFrame: '금고 보안 장치', minigameStart: '조작 시작', minigameRetry: '재시도',
+    minigameDone: '열쇠 확보 완료. 출입문에서 E.', inventoryTitle: '금고층 조사 기록', inventoryEmpty: '방 안의 자료에 다가가 E로 사본을 확보하세요.',
+    mapTitle: '금고층 배치도', escapedTitle: '비상구 개방', escapedText: '철문이 닫히자 뒤따르던 카메라 소리도 끊겼다.',
+    failedTitle: '금고층 봉쇄', failedText: '복도 끝에서부터 차례로 잠금 볼트가 걸린다.',
+    toLobby: '로비로', timerLabel: '금고층 봉쇄까지', scareText: '감시 카메라 작동 중',
+  },
   study: {
     introEyebrow: 'CASE FILE · 1998.11.17',
     introTitle: '11시 47분, 그의 시계는 멈췄다',
